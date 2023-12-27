@@ -16,6 +16,7 @@ pub enum TokenType {
     MULT_ASSIGN,
     DIV_ASSIGN,
     EQ,
+    NEQ,
 
     ADD,
     SUB,
@@ -39,9 +40,16 @@ pub enum TokenType {
     CLOSE_SQUARE,
 
     IF,
-    
+    ELSE,
+
     TRUE,
     FALSE,
+
+    AND,
+    OR,
+    NOT,
+
+    WHILE
 
 }
 
@@ -76,6 +84,13 @@ impl Token {
                     datatype:None,
                 }
             },
+            "else" => {
+                return Token {
+                    token_type: TokenType::ELSE,
+                    value:None,
+                    datatype:None,
+                }
+            }
             "true" => {
                 return Token {
                     token_type: TokenType::TRUE,
@@ -88,6 +103,27 @@ impl Token {
                     token_type: TokenType::FALSE,
                     value:None,
                     datatype:Some(DataType::Bool),
+                }
+            }
+            "and" => {
+                return Token {
+                    token_type: TokenType::AND,
+                    value:None,
+                    datatype:None,
+                }
+            }
+            "or" => {
+                return Token {
+                    token_type: TokenType::OR,
+                    value:None,
+                    datatype:None
+                }
+            },
+            "while" => {
+                return Token {
+                    token_type: TokenType::WHILE,
+                    value:None,
+                    datatype:None,
                 }
             }
             _ => {
@@ -119,7 +155,7 @@ impl Tokenizer {
         let mut tokens: Vec<Token> = Vec::new();
 
         while let Some(ch) = self.peek_char() {
-            if ch.is_alphabetic() {
+            if ch.is_alphabetic() || ch =='_' {
                 buf.push(ch);
                 self.consume_char();
 
@@ -172,7 +208,23 @@ impl Tokenizer {
                             tokens.push(Token {
                                 token_type: TokenType::ASSIGN,
                                 value: None,
-                    datatype:None,
+                                datatype:None,
+                            });
+                        }
+                    }
+                    '!' => {
+                        if self.peek_char_offset(1) == Some('=') {
+                            self.consume_char();
+                            tokens.push(Token {
+                                token_type: TokenType::NEQ,
+                                value:None,
+                                datatype:None,
+                            });
+                        }else {
+                            tokens.push(Token {
+                                token_type:TokenType::NOT,
+                                value:None,
+                                datatype:None,
                             });
                         }
                     }
@@ -286,6 +338,7 @@ impl Tokenizer {
                         value: None,
                     datatype:None,
                     }),
+                   
 
                     _ => {} // Handle other characters if needed
                 }
@@ -321,6 +374,13 @@ impl Tokenizer {
 pub fn is_bin_op(token_type:TokenType) -> bool {
     match token_type {
         TokenType::ADD | TokenType::MULT | TokenType::SUB | TokenType::DIV | TokenType::MOD => return true,
+        _ => false
+    }
+} 
+
+pub fn is_bool_op(token_type:TokenType) -> bool {
+    match token_type {
+        TokenType::AND | TokenType::OR | TokenType::NOT | TokenType::EQ | TokenType::NEQ  => return true,
         _ => false
     }
 }  

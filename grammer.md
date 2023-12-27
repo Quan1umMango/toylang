@@ -5,9 +5,10 @@ $$
     \begin{cases}
         \text{exit}([\text{Expr}]); \\
         \text{let}\space\text{ident} = [\text{Expr}]; \\
-        \text{if} ([\text{Expr}])[\text{Scope}]\\
+        \text{if} ([\text{Expr}])[\text{Scope}] \text{else}[\text{if}\text{ or }\text{[Scope]}] \\
         [\text{Scope}] \\
-        [\text{Reassign}]
+        [\text{Reassign}]\\
+        [\text{while([Expr])[Scope]}] \\
     \end{cases} \\
     \text{[Reassign]} &\to
     \begin{cases} 
@@ -22,8 +23,16 @@ $$
     [\text{Expr}] &\to
     \begin{cases}
         [\text{Term}] \\
-        [\text{BinExpr}]
+        [\text{BinExpr}] \\
+        [\text{BoolExpr}]
     \end{cases} \\
+    [\text{BoolExpr}] &\to 
+    \begin{cases} 
+            \text{[Expr] and [Expr]} \\
+            \text{[Expr] or [Expr]}\\
+            \text{[Expr] == [Expr]}\\
+            \text{[Expr] != [Expr]}\\ 
+    \end{cases}\\
     [\text{BinExpr}] &\to
     \begin{cases}
         [\text{Expr}] * [\text{Expr}] & \text{prec} = 1 \\

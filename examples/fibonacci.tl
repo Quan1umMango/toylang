@@ -1,3 +1,4 @@
+
 let fib = 1;
 let prev1 = 1;
 let prev2 = 0;

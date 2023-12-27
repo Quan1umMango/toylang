@@ -7,14 +7,15 @@ mod builder;
 mod generator;
 mod parser;
 mod tokens;
+mod erroring;
 
 use builder::*;
 use generator::*;
 use parser::*;
 use tokens::*;
+use erroring::*;
 
 fn main() {
-    println!("Check todos!. main.rs");
     let args: Vec<String> = env::args().collect();
 
     if args.len() < 2 {
