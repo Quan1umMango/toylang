@@ -159,7 +159,62 @@ pub fn end_scope(&mut self) {
                 self.pop("rax".to_string());
                 self.pop("rdx".to_string());
                 self.output = format!("{}\n\tcmp rax,rdx\n\t mov rax,1\n\t mov rdi,0\n\t cmove rax,rdi",self.output);
+                self.push("rax".to_string());
+            }
 
+           BoolExpr::BoolExprLessThanOrEqualTo { lhs, rhs } => {
+                let lhs = *lhs.clone();
+                let rhs = *rhs.clone();
+
+                self.generate_expr(&rhs);
+                self.generate_expr(&lhs);
+
+                self.pop("rax".to_string());
+                self.pop("rdx".to_string());
+
+                self.output = format!(
+                    "{}\n\tcmp rax, rdx\n\tmov rax, 1\n\tmov rdi, 0\n\tcmovg rax, rdi",
+                    self.output
+                );
+
+                self.push("rax".to_string());
+            }
+            BoolExpr::BoolExprGreaterThan{lhs,rhs} => {
+                let lhs = *lhs.clone();
+                let rhs = *rhs.clone();
+
+                self.generate_expr(&rhs);
+                self.generate_expr(&lhs);
+
+                self.pop("rax".to_string());
+                self.pop("rdx".to_string());
+
+                self.output = format!(
+                    "{}\n\tcmp rax, rdx\n\tmov rax, 0\n\tmov rdi, 1\n\tcmovg rax, rdi",
+                    self.output
+                );
+
+                self.push("rax".to_string());
+
+            }
+            BoolExpr::BoolExprGreaterThanOrEqualTo{lhs,rhs}  => {
+                let lhs =*lhs.clone();
+                let rhs =*rhs.clone();
+                self.generate_expr(&rhs);
+                self.generate_expr(&lhs);
+                self.pop("rax".to_string());
+                self.pop("rdx".to_string());
+                self.output = format!("{}\n\tcmp rax,rdx\n\t mov rax,1\n\t mov rdi,0\n\t cmovl rax,rdi",self.output);
+                self.push("rax".to_string());
+            }
+            BoolExpr::BoolExprLessThan{lhs,rhs} => {
+                let lhs =*lhs.clone();
+                let rhs =*rhs.clone();
+                self.generate_expr(&rhs);
+                self.generate_expr(&lhs);
+                self.pop("rax".to_string());
+                self.pop("rdx".to_string());
+                self.output = format!("{}\n\tcmp rax,rdx\n\t mov rax,0\n\t mov rdi,1\n\t cmovl rax,rdi",self.output);
                 self.push("rax".to_string());
             }
         }

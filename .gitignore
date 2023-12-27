@@ -2,5 +2,6 @@
 test.exe
 test.asm
 test.obj
-.ref.asm 
+ref.asm 
+test.2.asm 
 

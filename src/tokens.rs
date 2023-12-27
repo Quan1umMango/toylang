@@ -45,6 +45,11 @@ pub enum TokenType {
     TRUE,
     FALSE,
 
+    LESS_THAN,
+    GREATER_THAN,
+    LESS_THAN_EQUAL_TO,
+    GREATER_THAN_EQUAL_TO,
+
     AND,
     OR,
     NOT,
@@ -338,7 +343,38 @@ impl Tokenizer {
                         value: None,
                     datatype:None,
                     }),
-                   
+                    '>' => {
+                        if self.peek_char_offset(1) == Some('=') {
+                            self.consume_char();
+                            tokens.push(Token {
+                                token_type:TokenType::GREATER_THAN_EQUAL_TO,
+                                value:None,
+                                datatype:None
+                            });
+                        }else { 
+                         tokens.push(Token {
+                                token_type:TokenType::GREATER_THAN,
+                                value:None,
+                                datatype:None
+                            });
+                        }
+                    } 
+                    '<' => {
+                        if self.peek_char_offset(1) == Some('=') {
+                            self.consume_char();
+                            tokens.push(Token {
+                                token_type:TokenType::LESS_THAN_EQUAL_TO,
+                                value:None,
+                                datatype:None
+                            });
+                        }else { 
+                         tokens.push(Token {
+                                token_type:TokenType::LESS_THAN,
+                                value:None,
+                                datatype:None
+                            });
+                        }
+                    }
 
                     _ => {} // Handle other characters if needed
                 }
@@ -380,7 +416,7 @@ pub fn is_bin_op(token_type:TokenType) -> bool {
 
 pub fn is_bool_op(token_type:TokenType) -> bool {
     match token_type {
-        TokenType::AND | TokenType::OR | TokenType::NOT | TokenType::EQ | TokenType::NEQ  => return true,
+        TokenType::AND | TokenType::OR | TokenType::NOT | TokenType::EQ | TokenType::NEQ | TokenType::LESS_THAN | TokenType::LESS_THAN_EQUAL_TO | TokenType::GREATER_THAN | TokenType::GREATER_THAN_EQUAL_TO => return true,
         _ => false
     }
 }  

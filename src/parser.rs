@@ -33,7 +33,23 @@ pub enum BoolExpr {
     BoolExprNotEqualTo {
         lhs:Box<NodeExpr>,
         rhs:Box<NodeExpr>
-    }
+    },
+    BoolExprLessThan {
+        lhs:Box<NodeExpr>,
+        rhs:Box<NodeExpr>
+    },
+    BoolExprGreaterThan {
+        lhs:Box<NodeExpr>,
+        rhs:Box<NodeExpr>
+    },
+    BoolExprLessThanOrEqualTo {
+        lhs:Box<NodeExpr>,
+        rhs:Box<NodeExpr>
+    },
+    BoolExprGreaterThanOrEqualTo {
+        lhs:Box<NodeExpr>,
+        rhs:Box<NodeExpr>
+    },
 }
 
 #[derive(Debug,Clone)]
@@ -281,6 +297,25 @@ impl Parser {
                                 TokenType::NEQ => {
                                     let bool_expr_neq = BoolExpr::BoolExprNotEqualTo {lhs:Box::new(lhs_expr),rhs:Box::new(rhs)};
                                     lhs_expr=   NodeExpr::NodeExprBoolExpr{value:bool_expr_neq};
+                                }
+                                TokenType::GREATER_THAN => {
+                                    let bool_expr = BoolExpr::BoolExprGreaterThan{lhs:Box::new(lhs_expr),rhs:Box::new(rhs)};
+                                    lhs_expr = NodeExpr::NodeExprBoolExpr{value:bool_expr};
+                                }
+                                TokenType::GREATER_THAN_EQUAL_TO => {
+
+                                    let bool_expr = BoolExpr::BoolExprGreaterThanOrEqualTo{lhs:Box::new(lhs_expr),rhs:Box::new(rhs)};
+                                    lhs_expr = NodeExpr::NodeExprBoolExpr{value:bool_expr};
+                                }
+                                TokenType::LESS_THAN => {
+ 
+                                    let bool_expr = BoolExpr::BoolExprLessThan{lhs:Box::new(lhs_expr),rhs:Box::new(rhs)};
+                                    lhs_expr = NodeExpr::NodeExprBoolExpr{value:bool_expr};                                   
+                                }
+                                TokenType::LESS_THAN_EQUAL_TO => {
+
+                                    let bool_expr = BoolExpr::BoolExprLessThanOrEqualTo{lhs:Box::new(lhs_expr),rhs:Box::new(rhs)};
+                                    lhs_expr = NodeExpr::NodeExprBoolExpr{value:bool_expr};
                                 }
                                 _ => {
                                     println!("Invalid Boolean Operator: {:?}. Possibly unimplemented.", bool_op);
