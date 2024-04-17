@@ -2,11 +2,10 @@
 pub enum DataType {
     Int32,
     Bool,
-    Infer // Type has not been assigned yet, the parser will infer it later on
+    Infer, // Type has not been assigned yet, the parser will infer it later on
 }
  
-
-
+#[allow(non_camel_case_types)]
 #[derive(Debug, PartialEq, Copy, Clone)]
 pub enum TokenType {
     LET,
@@ -55,7 +54,6 @@ pub enum TokenType {
     NOT,
 
     WHILE
-
 }
 
 #[derive(Debug, Clone)]

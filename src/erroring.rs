@@ -7,14 +7,13 @@ pub trait CompilingError {
      fn error_and_exit(&self) {}
 }
 
-
-
 #[derive(Debug)]
 pub enum GenerationError {
     UndeclaredIdentifier {ident:Token},
     SameIdentifiers {ident:Token},
 }
 
+#[allow(dead_code)]
 #[derive(Debug)]
 pub enum ParsingError {
     ExpectedTokenNotFound{expected_token:String},

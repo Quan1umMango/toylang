@@ -13,7 +13,7 @@ pub enum NodeTerm {
     NodeTermIntLit{value:Token},
     NodeTermIdent{value:Token},
     NodeTermParen{value:Box<NodeExpr>},
-    NodeTermBool{value:Token}
+    NodeTermBool{value:Token},
 }
 
 #[derive(Debug,Clone)]
@@ -203,7 +203,7 @@ impl Parser {
                     NodeTerm::NodeTermBool{..} => DataType::Bool,
                     NodeTerm::NodeTermIntLit{..} => DataType::Int32,
                     NodeTerm::NodeTermIdent{value:tok} => {
-                        let dt =if(tok.datatype.is_some()) {
+                        let dt =if tok.datatype.is_some() {
                             tok.datatype.unwrap()
                         }else {
                             DataType::Infer
@@ -249,7 +249,10 @@ impl Parser {
                             ParsingError::InvalidIdentifier{ident:tok.value.clone().unwrap()}.error_and_exit();
                             return None;
                         }
-                    } 
+                    }
+                    NodeTerm::NodeTermParen { value } => {
+                        return self.get_datatype_expr(&value);
+                    }
                     _=> DataType::Infer,
 
                 }
@@ -270,9 +273,8 @@ impl Parser {
             let mut lhs_expr = NodeExpr::NodeExprTerm { value: lhs_term };
             let expr_dt = self.get_datatype_expr(&lhs_expr);
             if expr_datatype != DataType::Infer && expr_dt.is_some() && expr_dt.unwrap() != expr_datatype {
-
-                ParsingError::IncorrectTypeExpr{expected_type:expr_datatype,got_type:expr_dt.unwrap()}.error_and_exit();
-
+       
+                    ParsingError::IncorrectTypeExpr{expected_type:expr_datatype,got_type:expr_dt.unwrap()}.error_and_exit();
             }
             while let Some(cur) = self.peek_token() {
 
@@ -480,7 +482,7 @@ impl Parser {
                     NodeExpr::NodeExprBoolExpr { .. } =>{println!("sa"); ident.datatype = Some(DataType::Bool);},
                     _ => unimplemented!("Unimplemented Type"),
                 }
-                if let Some(mut v) = self.vars.get_mut(&ident.value.clone().unwrap()) {
+                if let Some(v) = self.vars.get_mut(&ident.value.clone().unwrap()) {
                     *v = ident.datatype.unwrap();
                 }
                 stmt_let = Some(NodeStatement::NodeStatementLet {
@@ -501,7 +503,7 @@ impl Parser {
 
   
 pub fn parse_else(&mut self) -> Option<NodeElse> {
-    if let Some(else_keyword) = self.try_consume(TokenType::ELSE) {
+    if let Some(_else_keyword) = self.try_consume(TokenType::ELSE) {
         let if_stmt = if let Some(i) = self.parse_if_stmt() {
             match i {
                 NodeStatement::NodeStatementIf { .. } => Some(Box::new(i)),
@@ -530,10 +532,10 @@ pub fn parse_else(&mut self) -> Option<NodeElse> {
 }
 
     pub fn parse_if_stmt(&mut self) -> Option<NodeStatement> {
-        if let Some(if_tok) = self.try_consume(TokenType::IF) {
-            if let Some(open_paren) = self.try_consume(TokenType::OPEN_PAREN) {
+        if let Some(_if_tok) = self.try_consume(TokenType::IF) {
+            if let Some(_open_paren) = self.try_consume(TokenType::OPEN_PAREN) {
                 if let Some(expr) = self.parse_expr(0,DataType::Infer) {
-                    if let Some(close_paren) = self.try_consume(TokenType::CLOSE_PAREN) {
+                    if let Some(_close_paren) = self.try_consume(TokenType::CLOSE_PAREN) {
                         if let Some(scope) = self.parse_stmt() {
                             let scope = match scope {
                                 NodeStatement::NodeStatementScope { value } => value,
@@ -576,7 +578,7 @@ pub fn parse_else(&mut self) -> Option<NodeElse> {
 
     pub fn parse_reassign_stmt(&mut self) -> Option<NodeStatement> {
         if let Some(mut ident) = self.try_consume(TokenType::IDENT) {
-            if let Some(assign) = self.try_consume(TokenType::ASSIGN) {
+            if let Some(_assign) = self.try_consume(TokenType::ASSIGN) {
                 if let Some(expr) = self.parse_expr(0,DataType::Infer) {
                     self.check_type_expr(&mut ident, expr.clone());
                     if self.try_consume(TokenType::SEMICOLON).is_none() {
@@ -588,7 +590,7 @@ pub fn parse_else(&mut self) -> Option<NodeElse> {
                 } else {
                     ParsingError::InvalidExpr.error_and_exit();
                 }
-            } else if let Some(add_assign) = self.try_consume(TokenType::ADD_ASSIGN) {
+            } else if let Some(_add_assign) = self.try_consume(TokenType::ADD_ASSIGN) {
                 if let Some(expr) = self.parse_expr(0,DataType::Infer) {
                     self.check_type_expr(&mut ident, expr.clone());
 
@@ -603,7 +605,7 @@ pub fn parse_else(&mut self) -> Option<NodeElse> {
                 } else {
                     ParsingError::InvalidExpr.error_and_exit();
                 }
-            } else if let Some(sub_assign) = self.try_consume(TokenType::SUB_ASSIGN) {
+            } else if let Some(_sub_assign) = self.try_consume(TokenType::SUB_ASSIGN) {
                 if let Some(expr) = self.parse_expr(0,DataType::Infer) {
                     self.check_type_expr(&mut ident, expr.clone());
 
@@ -618,7 +620,7 @@ pub fn parse_else(&mut self) -> Option<NodeElse> {
                 } else {
                     ParsingError::InvalidExpr.error_and_exit();
                 }
-            } else if let Some(mult_assign) = self.try_consume(TokenType::MULT_ASSIGN) {
+            } else if let Some(_mult_assign) = self.try_consume(TokenType::MULT_ASSIGN) {
                 if let Some(expr) = self.parse_expr(0,DataType::Infer) {
                     self.check_type_expr(&mut ident, expr.clone());
 
@@ -632,7 +634,7 @@ pub fn parse_else(&mut self) -> Option<NodeElse> {
                 } else {
                     ParsingError::InvalidExpr.error_and_exit();
                 }
-            } else if let Some(div_assign) = self.try_consume(TokenType::DIV_ASSIGN) {
+            } else if let Some(_div_assign) = self.try_consume(TokenType::DIV_ASSIGN) {
                 if let Some(expr) = self.parse_expr(0,DataType::Infer) {
                     self.check_type_expr(&mut ident, expr.clone());
 
@@ -683,7 +685,7 @@ pub fn parse_else(&mut self) -> Option<NodeElse> {
     }
 
     pub fn parse_stmt(&mut self) -> Option<NodeStatement> {
-        while let Some(curp) = self.peek_token() {
+        while let Some(_curp) = self.peek_token() {
             if let Some(stmt_exit) = self.parse_exit_stmt() {
                 return Some(stmt_exit);
             } else if let Some(let_stmt) = self.parse_let_stmt() {

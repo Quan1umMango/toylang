@@ -240,7 +240,7 @@ pub fn end_scope(&mut self) {
         match reassign {
             NodeReassign::Assign{ident,expr} => {
 
-                let ident_term = NodeTerm::NodeTermIdent{value:ident.clone()};
+                let _ident_term = NodeTerm::NodeTermIdent{value:ident.clone()};
                 //self.generate_term(&ident_term);
                 self.generate_expr(&expr);
                 self.pop("rax".to_string()); 
@@ -253,7 +253,7 @@ pub fn end_scope(&mut self) {
                 }                        
             },
             NodeReassign::Add{ident,expr} => {
-                let ident_term = NodeTerm::NodeTermIdent{value:ident.clone()};
+                let _ident_term = NodeTerm::NodeTermIdent{value:ident.clone()};
               //  self.generate_term(&ident_term);
                 self.generate_expr(&expr);
                 self.pop("rdx".to_string());
@@ -268,7 +268,7 @@ pub fn end_scope(&mut self) {
                 }      
             }
             NodeReassign::Sub{ident,expr} => {
-                let ident_term = NodeTerm::NodeTermIdent{value:ident.clone()};
+                let _ident_term = NodeTerm::NodeTermIdent{value:ident.clone()};
               //  self.generate_term(&ident_term);
                 self.generate_expr(&expr);
                 self.pop("rdx".to_string());
@@ -283,7 +283,7 @@ pub fn end_scope(&mut self) {
                 }      
             }
             NodeReassign::Mul{ident,expr} => {
-                let ident_term = NodeTerm::NodeTermIdent{value:ident.clone()};
+                let _ident_term = NodeTerm::NodeTermIdent{value:ident.clone()};
                 //self.generate_term(&ident_term);
                 self.generate_expr(&expr);
 
@@ -302,7 +302,7 @@ pub fn end_scope(&mut self) {
                 }      
             }
             NodeReassign::Div{ident,expr} => {
-                let ident_term = NodeTerm::NodeTermIdent{value:ident.clone()};
+                let _ident_term = NodeTerm::NodeTermIdent{value:ident.clone()};
                 self.generate_expr(&expr);
                 //self.generate_term(&ident_term);
                 let variables = self.variables.clone();
