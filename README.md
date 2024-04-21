@@ -1,11 +1,6 @@
 # Toylang
 Toy language created in  Rust for educational purposes.
 
-<<<<<<< HEAD
-Has if statements, scopes, variables and exit.
-Nothing more so no uncessesary bloat.
-
-
 =======
 
 ## Example
@@ -118,4 +113,3 @@ fn fib(int32 n): int32 {
 exit(fib(40));
 ```
 
->>>>>>> 801daf79f380512be0f05f30af6b4e2535d685f3
