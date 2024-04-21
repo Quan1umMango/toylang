@@ -26,18 +26,25 @@ while (n>1) {
 ```
 
 ## Description
-This implementation lacks an intermediate representation, so it is only able to compile to x86-64 assembly code. I'd like to implement an IR someday but as it is, the language won't compile correctly if you are not using windows x86-64 and have nasm and ld linked installed on your machine.
+Now theres two 
 
 ## Usage
 ### Compiling
 ```
-cargo run <project-name>.tl
+cargo run <project-name>.tl <compilation-mode>
 ```
-This creates a binary which can then be executed.
+
+### Compiltion modes 
+#### Bytecode (b):
+Creates a `.basm` file which can be executed with the [Basm](https://github.com/Quan1umMango/bytecode) Virtual Machine 
+#### Native (c):
+This creates a binary which can then be executed. Not recommended as it can only be execute on one type of machine and lacks language features. The development for this compilation mode is paused.
+Development might continue in the future.
 ### Viewing output
 Currently, there is no printing to the screen directly. 
 You have to use the ```exit()``` function with some integer exit code. 
-Then view it using ```echo %ERRORLEVEL%``` on windows. 
+If you're using the bytecode version, it outputs to the screen then exits.
+If youre using Native compiler view it using ```echo %ERRORLEVEL%``` on windows. 
 
 ## Variables
 Variables are declared with the ``let`` keyword.
@@ -47,16 +54,18 @@ let y = x + 1;
 let z = true;
 ```
 
-## There are currently 3 types:
+## There are currently 4 types:
 - Bool
 - Int32
 - Infer 
+- Void
 ```tl
 let bool = true;
 let int = 420;
 ```
 ``Infer`` type is for the compiler when it doesn't know what value the variable has. All variables are set to Infer then converted to whatever type there is on the other side of the assignment. You would almost never have to use this. 
 Variables cannot be assigned different types.
+``Void`` is still in development.
 ```tl
 let int = 1;
 int = false;
@@ -81,4 +90,32 @@ while(condition) {
 ```
 
 Comparisions and other assignment also included.
+
+## Functions 
+They start with the ``fn`` keyword. 
+General Structure:
+```
+fn <ident>(<type> <argIdent1>, <type> <argIdent2>,...,<type> <argIdentN>) : <optional-return-type>  {
+  function body;
+}
+```
+Example: Program to get the nth number in the fibbonacci series.
+```
+fn fib(int32 n): int32 {
+  let ans = 1;
+  let prev1 = 1;
+  let prev2 = 0;
+  while(n!=0) {
+    ans = prev1+prev2;
+    prev2 = prev1;
+    prev1 = ans;
+  
+  n -= 1;
+  }
+  return ans;
+}
+
+exit(fib(40));
+```
+
 >>>>>>> 801daf79f380512be0f05f30af6b4e2535d685f3

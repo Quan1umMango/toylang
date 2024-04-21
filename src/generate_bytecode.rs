@@ -1,4 +1,5 @@
 use crate::*;
+use std::collections::HashMap;
 use indexmap::IndexMap;
 
 
@@ -7,21 +8,27 @@ pub struct GeneratorVM {
     output: String,
     stack_size:usize,
     variables:IndexMap<String,Var>,
+    functions:HashMap<String,NodeFunctionDefination>, 
     scopes:Vec<usize>,
     label_count:usize,
 }
-    
+
+#[derive(Debug,Clone,PartialEq)]
+enum VarType {
+    FuncVariable, // for function params
+    NormalVariable
+}
 
 #[derive(Debug,Clone)]
 pub struct Var {
     stack_loc:usize,
+    t: VarType,
 }
 
 
 impl GeneratorVM {
     pub fn new(node_program: NodeProgram) -> GeneratorVM {
-
-        return GeneratorVM { node_program,output:"".to_string(),stack_size: 0,variables:IndexMap::new(),scopes:Vec::new(),label_count:0};
+        return GeneratorVM { node_program,output:"".to_string(),stack_size: 0,variables:IndexMap::new(),scopes:Vec::new(),label_count:0,functions:HashMap::new()};
     }
 
     pub fn generate(&mut self) {
@@ -48,7 +55,7 @@ impl GeneratorVM {
                     GenerationError::SameIdentifiers{ident:value.ident.clone()}.error_and_exit();
                 }
                 self.generate_expr(&value.expr);
-                let v = Var {stack_loc:self.stack_size-1};
+                let v = Var {stack_loc:self.stack_size-1,t:VarType::NormalVariable};
                 self.variables.insert(value.ident.clone().value.unwrap(),v);
             }
             
@@ -84,7 +91,7 @@ impl GeneratorVM {
                 self.output = format!("{}\nlabel {}_entry:",self.output,loop_label);
                 // Evaluate the loop condition
                 self.generate_expr(&while_loop.condition);
-                self.pop("rax");
+                self.pop("rbx");
                 // Jump to the exit label if the condition is false
 
                 self.output = format!("{}\n\tcmp rax, rax\n\tjz {}_exit",self.output,loop_label);
@@ -102,6 +109,56 @@ impl GeneratorVM {
             NodeStatementReassign { value } => {
                 self.generate_reassign(&value);
             }
+            NodeStatementFunctionDefination { value } => {
+                let fn_name = value.ident.value.clone().unwrap(); 
+                if self.functions.get(&fn_name).is_some() {
+                    GenerationError::SameIdentifiers{ident:value.ident.clone()}.error_and_exit();
+                }
+                self.functions.insert(fn_name.clone(),value.clone());
+                let old_out = self.output().clone();
+                self.output = format!("label {}:\n\t",fn_name);
+                let mut arg_locs:Vec<usize> = Vec::new();
+
+                for i in (0..value.args.len()).rev() {
+                    if let Some((ident,_nodeexpr)) = value.args.get_index(i) {
+
+                        let v = Var {stack_loc:value.args.len()-i-1,t:VarType::FuncVariable};
+                        self.variables.insert(ident.value.clone().unwrap(),v);
+
+                        arg_locs.push(i);
+                        self.stack_size +=1;
+                    } else {
+                        GenerationError::Custom("Unknown error lol".to_string()).error_and_exit();
+                    }
+                }
+                
+                self.generate_scope(&value.scope);
+                
+
+                self.variables.retain(|_,x| !arg_locs.contains(&x.stack_loc) && x.t != VarType::FuncVariable); 
+                self.output = format!("{}\n\tmov rax, 0\n\tret\n\t{}",self.output,old_out);
+            }
+            NodeStatementReturn { value } => {
+
+                if value.expr.is_some() {
+                    let e = value.expr.as_ref().unwrap();
+               
+                    self.generate_expr(&e);
+                }
+                self.output = format!("{}\n\t\n\tgetsp rax\n\tsub rax,1\n\ttruncstackr rcx,rax",self.output);
+                self.output = format!("{}\n\tret",self.output);
+            }
+
+            NodeStatementFunctionCall { value } => {
+                if self.functions.get(&value.ident.value.clone().unwrap()).is_none() {
+                    GenerationError::UndeclaredIdentifier{ident:value.ident.clone()}.error_and_exit();
+                }
+                // store rcx as base pointer 
+                // we get the arguments  of function by doing getfromstack (rcx-(argnumber*1)), rax
+                self.output = format!("{}\n\tgetsp rcx\n\tsub rcx, 1",self.output);
+                self.generate_expr(&NodeExpr::NodeExprFunctionCall{value:value.clone()});
+            }
+            _ => {}
         }
     }
 
@@ -124,25 +181,25 @@ impl GeneratorVM {
                     }
                     BinExprSub { lhs, rhs } => {
                         self.generate_expr(&lhs);
-                        self.pop("rax");
                         self.generate_expr(&rhs);
                         self.pop("rbx");
+                        self.pop("rax");
                         self.output = format!("{}\n\tsub rax, rbx",self.output);
                         self.push("rax");
                     }
                     BinExprMult { lhs, rhs } => {
                         self.generate_expr(&lhs);
-                        self.pop("rax");
                         self.generate_expr(&rhs);
                         self.pop("rbx");
+                        self.pop("rax");                
                         self.output = format!("{}\n\tmul rax, rbx",self.output);
                         self.push("rax");
                     }
                     BinExprDiv { lhs, rhs } => {
                         self.generate_expr(&lhs);
-                        self.pop("rax");
                         self.generate_expr(&rhs);
                         self.pop("rbx");
+                        self.pop("rax"); 
                         self.output = format!("{}\n\tdiv rax, rbx",self.output);
                         self.push("rax");
                     }
@@ -152,17 +209,17 @@ impl GeneratorVM {
                 use BoolExpr::*; 
                 match value {
                     BoolExprAnd { lhs, rhs } => {
-                        self.generate_expr(&lhs);
                         self.generate_expr(&rhs);
                         self.pop("rbx");
+                        self.generate_expr(&lhs);
                         self.pop("rax");
                         self.output = format!("{}\n\tcmp rax, rbx\n\tgetflag rax, eqf",self.output);
                     }
                     BoolExprOr { lhs, rhs } => {
                         self.generate_expr(&lhs);
-                        self.pop("rax");
                         self.generate_expr(&rhs);
                         self.pop("rbx");
+                        self.pop("rax");
                         self.output = format!("{}\n\tcmp rax 1\n\tgetflag rax, eqf\n\t",self.output);
                         todo!();
                     }
@@ -176,46 +233,70 @@ impl GeneratorVM {
                         
                     },
                     BoolExprNotEqualTo { lhs, rhs } => {
-                        self.generate_expr(&lhs);
-                        self.pop("rax");
                         self.generate_expr(&rhs);
                         self.pop("rbx");
+                        self.generate_expr(&lhs);
+                        self.pop("rax");
                         self.output = format!("{}\n\tcmp rax, rbx\n\tgetflag rax, eqf\n\tcmp rax,0\n\tgetflag rax, eqf\n\t",self.output);
                         self.push("rax");
                     }
                     BoolExprLessThan { lhs, rhs } => {
+ self.generate_expr(&rhs);
+                        self.pop("rbx");
                         self.generate_expr(&lhs);
                         self.pop("rax");
-                        self.generate_expr(&rhs);
-                        self.pop("rbx");
+
                         self.output = format!("{}\n\tcmp rax, rbx\n\tgetflag rax, lf\n\tcmp rax, 1\n\tgetflag rax, eqf\n\t",self.output);
                         self.push("rax");
                     }
                     BoolExprGreaterThan { lhs, rhs } => {
-                        self.generate_expr(&lhs);
-                        self.pop("rax");
-                        self.generate_expr(&rhs);
+                       self.generate_expr(&rhs);
                         self.pop("rbx");
+                        self.generate_expr(&lhs);
+                        self.pop("rax");                     
+
                         self.output = format!("{}\n\tcmp rax, rbx\n\tgetflag rax, gf\n\tcmp rax, 1\n\tgetflag rax, eqf\n\t",self.output);
                         self.push("rax");
                     }
                     BoolExprLessThanOrEqualTo { lhs, rhs } => {
-                        self.generate_expr(&lhs);
-                        self.pop("rax");
-                        self.generate_expr(&rhs);
+                         self.generate_expr(&rhs);
                         self.pop("rbx");
+                        self.generate_expr(&lhs);
+                        self.pop("rax");                     
                         self.output = format!("{}\n\tcmp rax, rbx\n\tgetflag rax, gf\n\tcmp rax,1\n\tgetflag rax,eqf\n\t",self.output);
                     }
                     BoolExprGreaterThanOrEqualTo { lhs, rhs } => {
+                       self.generate_expr(&rhs);
+                        self.pop("rbx");
                         self.generate_expr(&lhs);
                         self.pop("rax");
-                        self.generate_expr(&rhs);
-                        self.pop("rbx");
+
                         self.output = format!("{}\n\tcmp rax, rbx\n\tgetflag rax, lf\n\tcmp rax, 0\n\tgetflag rax,eqf",self.output);
                     }
 
                 }
             }
+            NodeExprFunctionCall { value } => {
+                if let Some(nodefuncdef) =  self.functions.get(&value.ident.value.clone().unwrap()) {
+
+                    let ident = value.ident.clone();
+                    if value.args.len() != nodefuncdef.args.len() {
+                        GenerationError::Custom(format!("Expected {:?} arguments for function {:?}, found {:?}",nodefuncdef.args.len(),ident,value.args.len())).error_and_exit();
+                    }
+                    for args in value.args.iter() {
+                        self.generate_expr(args);
+                    }
+                    // store rcx as base pointer 
+                    // we get the arguments  of function by doing getfromstack (rcx-(argnumber*1)), rax
+                    self.output = format!("{}\n\tgetsp rcx\n\tsub rcx, 1",self.output);
+
+
+                    self.output =format!("{}\n\tcall {}",self.output,ident.value.unwrap());
+                }else {
+                    GenerationError::UndeclaredIdentifier{ident:value.ident.clone()}.error_and_exit();
+                }
+            }
+            _ => todo!()
         }
     }
 
@@ -227,11 +308,10 @@ impl GeneratorVM {
             }
             NodeTermIdent { value } => {
                 if self.variables.get(&value.value.clone().unwrap()).is_none() {
-                    println!("{}",self.output());
                     GenerationError::UndeclaredIdentifier{ident:value.clone()}.error_and_exit();
                 }
                 let v = self.variables.get(&value.value.clone().unwrap()).unwrap();
-                self.output = format!("{}\n\tgetfromstack {}, rax\n\t",self.output,v.stack_loc);
+                self.variable_get_data(&v.clone(),"rax");
                 self.push("rax");
             }
     
@@ -249,9 +329,11 @@ impl GeneratorVM {
 
     pub fn generate_scope(&mut self, scope:&NodeScope) {
         self.begin_scope();
+        
             for stmt in scope.stmts.iter() {
             self.generate_statement(&stmt);
         }
+        
         self.end_scope();
     }
 
@@ -260,11 +342,16 @@ impl GeneratorVM {
     }
 
     pub fn end_scope(&mut self) {
-      // self.output = format!("{}\n\tendlabel",self.output);
-        let pop_count = self.variables.len()-self.scopes.pop().unwrap();
-        self.stack_size -= pop_count;
-        for _ in self.variables.len()..pop_count{
-            self.variables.pop();
+        // self.output = format!("{}\n\tendlabel",self.output);
+        if let Some(pop) = self.scopes.pop() {
+            let pop_count = self.variables.len()-pop;
+            self.stack_size -= pop_count;
+            dbg!(&self.stack_size);
+            for _ in 0..pop_count{
+                self.variables.pop();
+            }
+            self.output = format!("{}\n\ttruncstack {}",self.output,pop_count);
+
         }
     }
 
@@ -274,10 +361,11 @@ impl GeneratorVM {
             Assign {ident,expr} => {
                 self.generate_expr(&expr);
                 self.pop("rax");
-                if let Some(var) = self.variables.get(&ident.value.clone().unwrap()) {
-                    self.output = format!("{}\n\tsetfromsp {}, rax\n",self.output,self.stack_size-var.stack_loc-1);
+               if let Some(var) = self.variables.get(&ident.value.clone().unwrap()) {
+                    let var = var.clone();
+                    self.variable_set_data(&var);
                 }else {
-                
+
                     GenerationError::UndeclaredIdentifier{ident:ident.clone()}.error_and_exit();
                 }
                  
@@ -286,7 +374,10 @@ impl GeneratorVM {
                 self.generate_expr(&expr);
                 self.pop("rdx");
                 if let Some(var) = self.variables.get(&ident.value.clone().unwrap()) {
-                    self.output = format!("{}\n\tgetfromsp {}, rax\n\tadd rax,rdx\n\tsetfromsp {}, rax\n\t",self.output,self.stack_size-var.stack_loc-1,self.stack_size-var.stack_loc-1,);
+                    let var = var.clone();
+                    self.variable_get_data(&var,"rax");
+                    self.output = format!("{}\n\tadd rax,rdx\n\t",self.output);
+                    self.variable_set_data(&var);
                 }else {
 
                     GenerationError::UndeclaredIdentifier{ident:ident.clone()}.error_and_exit();
@@ -294,10 +385,13 @@ impl GeneratorVM {
             }
 
             Sub { ident, expr } => {
-                self.generate_expr(&expr);
+               self.generate_expr(&expr);
                 self.pop("rdx");
                 if let Some(var) = self.variables.get(&ident.value.clone().unwrap()) {
-                    self.output = format!("{}\n\tgetfromsp {}, rax\n\tsub rax,rdx\n\tsetfromsp {}, rax\n\t",self.output,self.stack_size-var.stack_loc-1,self.stack_size-var.stack_loc-1,);
+                    let var = var.clone();
+                    self.variable_get_data(&var,"rax");
+                    self.output = format!("{}\n\tsub rax,rdx\n\t",self.output);
+                    self.variable_set_data(&var);
                 }else {
 
                     GenerationError::UndeclaredIdentifier{ident:ident.clone()}.error_and_exit();
@@ -305,10 +399,13 @@ impl GeneratorVM {
             }
 
             Mul { ident, expr } => {
-                self.generate_expr(&expr);
+                 self.generate_expr(&expr);
                 self.pop("rdx");
                 if let Some(var) = self.variables.get(&ident.value.clone().unwrap()) {
-                    self.output = format!("{}\n\tgetfromsp {}, rax\n\tmul rax,rdx\n\tsetfromsp {}, rax\n\t",self.output,self.stack_size-var.stack_loc-1,self.stack_size-var.stack_loc-1,);
+                    let var = var.clone();
+                    self.variable_get_data(&var,"rax");
+                    self.output = format!("{}\n\tmul rax,rdx\n\t",self.output);
+                    self.variable_set_data(&var);
                 }else {
 
                     GenerationError::UndeclaredIdentifier{ident:ident.clone()}.error_and_exit();
@@ -316,10 +413,13 @@ impl GeneratorVM {
             }
 
             Div { ident, expr } => {
-                self.generate_expr(&expr);
+                 self.generate_expr(&expr);
                 self.pop("rdx");
                 if let Some(var) = self.variables.get(&ident.value.clone().unwrap()) {
-                    self.output = format!("{}\n\tgetfromsp {}, rax\n\tdiv rax,rdx\n\tsetfromsp {}, rax\n\t",self.output,self.stack_size-var.stack_loc-1,self.stack_size-var.stack_loc-1,);
+                    let var = var.clone();
+                    self.variable_get_data(&var,"rax");
+                    self.output = format!("{}\n\tdiv rax,rdx\n\t",self.output);
+                    self.variable_set_data(&var);
                 }else {
 
                     GenerationError::UndeclaredIdentifier{ident:ident.clone()}.error_and_exit();
@@ -346,4 +446,29 @@ impl GeneratorVM {
         self.label_count += 1;
         return format!("label{}",self.label_count-1);
     }
+
+    fn variable_get_data(&mut self, var:&Var,reg:&str) {
+        match var.t {
+            VarType::FuncVariable => {
+                //self.output = format!("{}\n\t mov rax, rcx\n\tsub rax, {}\n\tgetfromstack rax,{reg}",self.output,var.stack_loc);
+
+                self.output = format!("{}\n\t mov rax, rcx\n\tsub rax, {}\n\tgetfromstack rax,{reg}",self.output,var.stack_loc);
+            }
+            VarType::NormalVariable => {
+                self.output = format!("{}\n\tgetfromsp {},{reg}",self.output,self.stack_size-1-var.stack_loc);
+            }
+        };
+    }
+    fn variable_set_data(&mut self,var:&Var)  {
+        match var.t {
+            VarType::FuncVariable => {
+                self.output = format!("{}\n\t mov rdx, rcx\n\tsub rdx, {}\n\tsetstack rdx,rax",self.output,var.stack_loc);
+            }
+            VarType::NormalVariable => {
+                self.output = format!("{}\n\tsetstack {}, rax",self.output,var.stack_loc);
+            }
+        }
+
+    }
 }
+

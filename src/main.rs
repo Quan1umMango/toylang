@@ -8,18 +8,18 @@ mod generator;
 mod parser;
 mod tokens;
 mod erroring;
-mod generate_interpreter;
+mod generate_bytecode;
 
 use builder::*;
 use generator::*;
 use parser::*;
 use tokens::*;
 use erroring::*;
-use generate_interpreter::*;
+use generate_bytecode::*;
 
 fn main() {
     let args: Vec<String> = env::args().collect();
-
+    
     if args.len() < 3 {
         println!("Incorrect Usage. Correct Usage: \n\t toylang <input_file>.tl <runtype>");
         return;
@@ -51,7 +51,7 @@ fn main() {
 
     let runtype = &args[2];
     match runtype.as_str() {
-        "interpreter" | "i" => {
+        "bytecode" | "b" => {
             let mut generator = GeneratorVM::new(prog);
             generator.generate();
             let asm = generator.output();
@@ -80,7 +80,7 @@ fn main() {
             }
             build(file_name);
         }
-        _ => {eprintln!("Invalid RunType. Expected either `interpreter` or `compiler`."); return}
+        _ => {eprintln!("Invalid RunType. Expected either `bytecode` or `compiler`."); return}
     }
 
 

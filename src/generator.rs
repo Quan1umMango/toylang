@@ -10,7 +10,7 @@ pub struct Generator {
     scopes:Vec<usize>,
     label_count:usize,
 }
-    
+
 
 #[derive(Clone)]
 pub struct Var {
@@ -29,13 +29,13 @@ impl Generator {
         self.scopes.push(self.variables.len());
     }
 
-pub fn end_scope(&mut self) {
+    pub fn end_scope(&mut self) {
 
         let pop_count = self.variables.len()- self.scopes[self.scopes.len()-1];
         self.output = format!("{}\n\tadd rsp, {}\n",self.output,pop_count*8);
         self.stack_size -= pop_count;
         for _ in self.variables.len()..pop_count {
-                self.variables.pop();
+            self.variables.pop();
         }    }
 
     pub fn generate_term(&mut self, term:&NodeTerm) {
@@ -63,7 +63,7 @@ pub fn end_scope(&mut self) {
                 };
                 self.output = format!("{}\n\tmov rax,{}",self.output,val);
                 self.push("rax".to_string());
-             }
+            }
         }
     }
 
@@ -71,7 +71,7 @@ pub fn end_scope(&mut self) {
 
     pub fn generate_bin_expr(&mut self,bin_expr:&BinExpr) {
         match &bin_expr {
-            
+
             BinExpr::BinExprDiv{lhs,rhs} => {
                 let lhs =*lhs.clone();
                 let rhs =*rhs.clone();
@@ -79,14 +79,14 @@ pub fn end_scope(&mut self) {
                 self.generate_expr(&lhs);
                 self.pop("rax".to_string());
                 self.pop("rbx".to_string());
-                
+
                 self.output = format!("{}\n\txor rdx, rdx\n\tdiv rbx\n\t",self.output);
                 self.push("rax".to_string());
 
             }
-            
+
             BinExpr::BinExprMult{lhs,rhs} => {
-               let lhs =*lhs.clone();
+                let lhs =*lhs.clone();
                 let rhs =*rhs.clone();
                 self.generate_expr(&rhs);
                 self.generate_expr(&lhs);
@@ -107,7 +107,7 @@ pub fn end_scope(&mut self) {
                 self.push("rax".to_string());
             },
             BinExpr::BinExprSub{lhs,rhs} => {
-               let lhs =*lhs.clone();
+                let lhs =*lhs.clone();
                 let rhs =*rhs.clone();
                 self.generate_expr(&rhs);
                 self.generate_expr(&lhs);
@@ -162,7 +162,7 @@ pub fn end_scope(&mut self) {
                 self.push("rax".to_string());
             }
 
-           BoolExpr::BoolExprLessThanOrEqualTo { lhs, rhs } => {
+            BoolExpr::BoolExprLessThanOrEqualTo { lhs, rhs } => {
                 let lhs = *lhs.clone();
                 let rhs = *rhs.clone();
 
@@ -175,7 +175,7 @@ pub fn end_scope(&mut self) {
                 self.output = format!(
                     "{}\n\tcmp rax, rdx\n\tmov rax, 1\n\tmov rdi, 0\n\tcmovg rax, rdi",
                     self.output
-                );
+                    );
 
                 self.push("rax".to_string());
             }
@@ -192,7 +192,7 @@ pub fn end_scope(&mut self) {
                 self.output = format!(
                     "{}\n\tcmp rax, rdx\n\tmov rax, 0\n\tmov rdi, 1\n\tcmovg rax, rdi",
                     self.output
-                );
+                    );
 
                 self.push("rax".to_string());
 
@@ -225,17 +225,18 @@ pub fn end_scope(&mut self) {
             NodeExpr::NodeExprTerm{value} => {self.generate_term(&value);}
             NodeExpr::NodeExprBinExpr{value:bin_expr} => {self.generate_bin_expr(&bin_expr);}
             NodeExpr::NodeExprBoolExpr{value:bool_expr} => {self.generate_bool(&bool_expr);}
+            _ => todo!()
         }
     }
 
     pub fn generate_scope(&mut self,node_scope:&NodeScope) {
-                       self.begin_scope();
-                for stmt in node_scope.stmts.clone().iter() {
-                    self.generate_statement(stmt);
-                }
-                self.end_scope();
+        self.begin_scope();
+        for stmt in node_scope.stmts.clone().iter() {
+            self.generate_statement(stmt);
+        }
+        self.end_scope();
     }
-   
+
     pub fn generate_reassign(&mut self, reassign:&NodeReassign) {
         match reassign {
             NodeReassign::Assign{ident,expr} => {
@@ -254,7 +255,7 @@ pub fn end_scope(&mut self) {
             },
             NodeReassign::Add{ident,expr} => {
                 let _ident_term = NodeTerm::NodeTermIdent{value:ident.clone()};
-              //  self.generate_term(&ident_term);
+                //  self.generate_term(&ident_term);
                 self.generate_expr(&expr);
                 self.pop("rdx".to_string());
                 if let Some(var) = self.variables.get(&ident.value.clone().unwrap()) {
@@ -269,7 +270,7 @@ pub fn end_scope(&mut self) {
             }
             NodeReassign::Sub{ident,expr} => {
                 let _ident_term = NodeTerm::NodeTermIdent{value:ident.clone()};
-              //  self.generate_term(&ident_term);
+                //  self.generate_term(&ident_term);
                 self.generate_expr(&expr);
                 self.pop("rdx".to_string());
                 if let Some(var) = self.variables.get(&ident.value.clone().unwrap()) {
@@ -323,18 +324,18 @@ pub fn end_scope(&mut self) {
             }
         }
     }
-       pub fn generate_statement(&mut self,stmt:&NodeStatement) {
-            match &stmt {
+    pub fn generate_statement(&mut self,stmt:&NodeStatement) {
+        match &stmt {
 
-                NodeStatement::NodeStatementLet{value:let_stmt} => {
-                    if self.variables.get(&let_stmt.ident.value.clone().unwrap()).is_some() {
-                        GenerationError::SameIdentifiers{ident:let_stmt.ident.clone()}.error_and_exit();
-                    }
-                    self.variables.insert(let_stmt.ident.value.clone().unwrap(),Var {stack_loc:self.stack_size});
-
-                    self.generate_expr(&let_stmt.expr);     
-
+            NodeStatement::NodeStatementLet{value:let_stmt} => {
+                if self.variables.get(&let_stmt.ident.value.clone().unwrap()).is_some() {
+                    GenerationError::SameIdentifiers{ident:let_stmt.ident.clone()}.error_and_exit();
                 }
+                self.variables.insert(let_stmt.ident.value.clone().unwrap(),Var {stack_loc:self.stack_size});
+
+                self.generate_expr(&let_stmt.expr);     
+
+            }
             NodeStatement::NodeStatementExit{value:exit_stmt} => {
                 self.generate_expr(&exit_stmt.expr);
                 self.pop("rdi".to_string());
@@ -373,74 +374,75 @@ pub fn end_scope(&mut self) {
             NodeStatement::NodeStatementReassign{value:reassign_stmt} => {
                 self.generate_reassign(reassign_stmt);
             }
-          
-NodeStatement::NodeStatementWhileLoop{value:while_loop} => {
-    let loop_label = self.get_label();
-    self.output = format!("{}\n{}_entry:", self.output, loop_label.clone());
-    
-    // Evaluate the loop condition
-    self.generate_expr(&while_loop.condition);
-    self.pop("rax".to_string());
-    
-    // Jump to the exit label if the condition is false
-    self.output = format!("{}\n\ttest rax, rax\n\tjz {}_exit", self.output, loop_label.clone());
 
-    // Generate the loop body
-    self.generate_scope(&while_loop.scope);
+            NodeStatement::NodeStatementWhileLoop{value:while_loop} => {
+                let loop_label = self.get_label();
+                self.output = format!("{}\n{}_entry:", self.output, loop_label.clone());
 
-    // Jump back to the entry label
-    self.output = format!("{}\n\tjmp {}_entry", self.output, loop_label.clone());
+                // Evaluate the loop condition
+                self.generate_expr(&while_loop.condition);
+                self.pop("rax".to_string());
 
-    // Exit label
-    self.output = format!("{}\n{}_exit:", self.output, loop_label.clone());
-}
+                // Jump to the exit label if the condition is false
+                self.output = format!("{}\n\ttest rax, rax\n\tjz {}_exit", self.output, loop_label.clone());
+
+                // Generate the loop body
+                self.generate_scope(&while_loop.scope);
+
+                // Jump back to the entry label
+                self.output = format!("{}\n\tjmp {}_entry", self.output, loop_label.clone());
+
+                // Exit label
+                self.output = format!("{}\n{}_exit:", self.output, loop_label.clone());
+            }
+            _ =>todo!()
         }
-}
-    
+    }
 
-pub fn generate_program(&mut self) -> String {
-    self.output = String::from(
-        "section .text\n\tglobal _start\n\t
+
+    pub fn generate_program(&mut self) -> String {
+        self.output = String::from(
+            "section .text\n\tglobal _start\n\t
             extern ExitProcess\n_start:\n\t
             ",
-    );
+            );
 
-    for node_stmt in self.node_program.stmts.clone().iter() {
-        self.generate_statement(node_stmt);
+        for node_stmt in self.node_program.stmts.clone().iter() {
+            self.generate_statement(node_stmt);
+        }
+        /*
+           let exit_code = match &self.node_program.stmts[self.node_program.stmts.len()-1].value {
+           NodeExprVarient::NodeExprIntLit(tok) => tok.value.clone(),
+           _ => Some("0".to_string()),
+           };
+           self.output = format!(
+           "{}mov rcx, {}\n\tsub rsp, 32\n\tcall ExitProcess",
+           self.output,
+           exit_code.unwrap()
+           );
+           */
+
+        // Add Exit code 
+        self.output = format!("{}\n\tmov rcx, 0\n\tsub rsp, 32\n\tcall ExitProcess",self.output.clone());
+        return self.output.clone();
     }
-    /*
-    let exit_code = match &self.node_program.stmts[self.node_program.stmts.len()-1].value {
-    NodeExprVarient::NodeExprIntLit(tok) => tok.value.clone(),
-    _ => Some("0".to_string()),
-    };
-    self.output = format!(
-    "{}mov rcx, {}\n\tsub rsp, 32\n\tcall ExitProcess",
-    self.output,
-    exit_code.unwrap()
-    );
-    */
 
-    // Add Exit code 
-    self.output = format!("{}\n\tmov rcx, 0\n\tsub rsp, 32\n\tcall ExitProcess",self.output.clone());
-    return self.output.clone();
-}
+    pub fn push(&mut self, reg:String) {
+        self.output = format!("{}\n\tpush {}\n\t",self.output,reg);
+        self.stack_size +=1;
+    }
 
-pub fn push(&mut self, reg:String) {
-    self.output = format!("{}\n\tpush {}\n\t",self.output,reg);
-    self.stack_size +=1;
-}
+    pub fn pop(&mut self, reg:String) {
+        self.output = format!("{}\n\tpop {}\n\t",self.output,reg);
+        self.stack_size -=1;
 
-pub fn pop(&mut self, reg:String) {
-    self.output = format!("{}\n\tpop {}\n\t",self.output,reg);
-    self.stack_size -=1;
+    }
 
-}
-
-// Gets a new label name
-pub fn get_label(&mut self) -> String {
-    self.label_count +=1;
-    return format!("label{}",self.label_count-1);
-}
+    // Gets a new label name
+    pub fn get_label(&mut self) -> String {
+        self.label_count +=1;
+        return format!("label{}",self.label_count-1);
+    }
 
 
 }
