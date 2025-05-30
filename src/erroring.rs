@@ -80,10 +80,10 @@ impl fmt::Display for ParsingError {
             }
             ParsingError::IncorrectType{ident,expected_type,got_type} => {
                 let loc = ident.token_location;
-                write!(f,"Cannot assign {} which is of type {:?} to {:?}\n\t at {}:{}",ident.value.clone().unwrap(),expected_type,got_type,loc.0,loc.1)
+                write!(f,"Cannot assign {} which is of type {} to {}\n\t at {}:{}",ident.value.clone().unwrap(),expected_type,got_type,loc.0,loc.1)
             }
             ParsingError::IncorrectTypeExpr{expected_type,got_type, loc} => {
-                write!(f,"Expression is of type:{:?}, but the value of the expressions is of type {:?}\n\tat {}:{}",expected_type,got_type,loc.0,loc.1)
+                write!(f,"Expected type:{}, but got type {}\n\tat {}:{}",expected_type,got_type,loc.0,loc.1)
             },
             ParsingError::ExpectedStatementNotFound{expected_statement, loc} => {
                 write!(f,"Expected {} statement  at {}:{}",expected_statement,loc.0,loc.1)
@@ -111,5 +111,26 @@ impl fmt::Display for GenerationError {
                 write!(f,"{}",err_msg)
             }
         }
+    }
+}
+
+pub enum TokenizationError<'a> {
+    Custom(&'a str),
+}
+
+impl fmt::Display for TokenizationError<'_> {
+    fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
+        match self {
+            Self::Custom(a) => {
+               write!(f,"{}",a) 
+            }
+        }
+    }
+}
+impl TokenizationError<'_>{
+    pub fn error_and_exit(&self) {
+      println!("Unable to compile program:Tokenization Error\n\t{}",self);
+        std::process::exit(1);
+
     }
 }

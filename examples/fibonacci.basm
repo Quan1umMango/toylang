@@ -43,6 +43,7 @@ label label0_entry:
 	
 	push rax
 	pop rax
+
 	setfromsp 2, rax
 
 	push 1

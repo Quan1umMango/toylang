@@ -340,7 +340,6 @@ impl Generator {
                 self.generate_expr(&exit_stmt.expr);
                 self.pop("rdi".to_string());
                 self.output = format!("{}\n\tmov rcx, rdi\n\tsub rsp, 32\n\tcall ExitProcess\n",self.output);    
-
             }
             NodeStatement::NodeStatementScope{value:node_scope} =>  {
                 self.generate_scope(&node_scope);

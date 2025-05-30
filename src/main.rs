@@ -4,24 +4,24 @@ use std::fs::File;
 use std::io::prelude::*;
 
 mod builder;
-mod generator;
 mod parser;
 mod tokens;
 mod erroring;
-mod generate_bytecode;
+//mod generate_bytecode;
+mod generate_bytecode2;
+//mod intermediate_lang; 
 
 use builder::*;
-use generator::*;
 use parser::*;
 use tokens::*;
 use erroring::*;
-use generate_bytecode::*;
+//use generate_bytecode::*;
 
 fn main() {
     let args: Vec<String> = env::args().collect();
     
-    if args.len() < 3 {
-        println!("Incorrect Usage. Correct Usage: \n\t toylang <input_file>.tl <runtype>");
+    if args.len() < 2 {
+        println!("Incorrect Usage. Correct Usage: \n\t toylang <input_file>.tl >");
         return;
     }
 
@@ -45,43 +45,32 @@ fn main() {
     };
     let mut tokenizer = Tokenizer::new(contents);
     let tokens = tokenizer.tokenize();
-
     let mut parser = Parser::new(tokens);
     let prog = parser.parse_program().unwrap();
-
-    let runtype = &args[2];
-    match runtype.as_str() {
-        "bytecode" | "b" => {
-            let mut generator = GeneratorVM::new(prog);
-            generator.generate();
-            let asm = generator.output();
-            let mut file = File::create(format!("{}.basm",file_name)).ok().unwrap();
-            match file.write_all(asm.as_bytes()) {
-                Err(e) => {
-                    println!("Unable to write to file {:?}",e);
-                    std::process::exit(1);
-                }
-                Ok(_) => () 
-            }
-
-            println!("[Status] Finished Generating {}.basm file.",file_name);
+/*
+    let mut generator = GeneratorVM::new(prog,parser.functions,parser.vars);
+    generator.generate();
+    let asm = generator.output();
+    let mut file = File::create(format!("{}.basm",file_name)).ok().unwrap();
+    match file.write_all(asm.as_bytes()) {
+        Err(e) => {
+            println!("Unable to write to file {:?}",e);
+            std::process::exit(1);
         }
-        "compiler" | "c" => {
-            
-            println!("[WARNING] Development to native compilation will be slowed down in favour of compiling to bytecode.\n\t  Some features may not be available.\n\t  Use the `i` flag for future uses.");
-            let mut generator = Generator::new(prog);
-            let asm = generator.generate_program();
-            let mut file = File::create(format!("{}.asm", file_name)).ok().unwrap();
-            match file.write_all(asm.as_bytes()) {
-                Err(e) => {
-                    println!("Unable to Write to file: {:?}", e)
-                }
-                _ => (),
-            }
-            build(file_name);
-        }
-        _ => {eprintln!("Invalid RunType. Expected either `bytecode` or `compiler`."); return}
+        Ok(_) => () 
     }
-
+    */
+    let mut gen = generate_bytecode2::GeneratorVM::new(prog,parser.functions,parser.vars);
+    gen.generate();
+    let asm = gen.output();
+    let mut file = File::create(format!("{}.basm",file_name)).ok().unwrap();
+    match file.write_all(asm.as_bytes()) {
+        Err(e) => {
+            println!("Unable to write to file {:?}",e);
+            std::process::exit(1);
+        }
+        Ok(_) => () 
+    }
+    println!("[Status] Finished Generating {}.basm file.",file_name);
 
 }

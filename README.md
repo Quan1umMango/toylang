@@ -1,7 +1,5 @@
-# Toylang
+# Pluto 
 Toy language created in  Rust for educational purposes.
-
-=======
 
 ## Example
 Simple program to calculate the factorial of a number (n) and exit with the factorial.
@@ -21,51 +19,51 @@ while (n>1) {
 ```
 
 ## Description
-Now theres two 
+Pluto is a lightweight and simple programming language. It is very early in development. Pluto runs on the (Basm)[https://github.com/Quan1umMango/bytecode] (name yet to be changed) Virtual machine.
 
 ## Usage
 ### Compiling
 ```
-cargo run <project-name>.tl <compilation-mode>
+cargo run <project-name>.tl
 ```
 
-### Compiltion modes 
-#### Bytecode (b):
-Creates a `.basm` file which can be executed with the [Basm](https://github.com/Quan1umMango/bytecode) Virtual Machine 
-#### Native (c):
-This creates a binary which can then be executed. Not recommended as it can only be execute on one type of machine and lacks language features. The development for this compilation mode is paused.
-Development might continue in the future.
 ### Viewing output
 Currently, there is no printing to the screen directly. 
-You have to use the ```exit()``` function with some integer exit code. 
-If you're using the bytecode version, it outputs to the screen then exits.
-If youre using Native compiler view it using ```echo %ERRORLEVEL%``` on windows. 
-
+You have to use the ```exit()``` function with some integer exit code and it prints the code and exits.
 ## Variables
 Variables are declared with the ``let`` keyword.
 ```tl
-let x = 34;
+// Comments begin with two /. They are ignored by the compiler
+let x = 34; 
 let y = x + 1;
 let z = true;
+let arr = [1,2,3];
+let arr2 = [1;10]; // Creates a array of size 10, all elements as 1;
 ```
 
-## There are currently 4 types:
+## Available Datatypes:
 - Bool
 - Int32
 - Infer 
+- Array<Type> where type is any other datatype 
+- Slice<Type>
+- Pointer<Type>
 - Void
+
 ```tl
-let bool = true;
+let b = true;
 let int = 420;
 ```
 ``Infer`` type is for the compiler when it doesn't know what value the variable has. All variables are set to Infer then converted to whatever type there is on the other side of the assignment. You would almost never have to use this. 
 Variables cannot be assigned different types.
 ``Void`` is still in development.
+
+Variable once created, cannot change their type.
 ```tl
 let int = 1;
 int = false;
 ```
-Gives an error saying you can't assign int which has the type Int32 to Bool.
+Gives an error saying you can't assign int which has the type int32 to bool.
 
 If and else statements
 ```tl

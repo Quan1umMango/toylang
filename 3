@@ -1,0 +1,13 @@
+section .text
+    global _start
+
+    extern ExitProcess
+
+_start:
+    push 12; Push the value 12 onto the stack
+    push 9
+    push 10
+    push 11
+    mov rcx, [rsp-4]
+    sub rsp, 32
+    call ExitProcess    ; Call ExitProcess with the value from the stack

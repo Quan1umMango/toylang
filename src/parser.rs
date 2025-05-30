@@ -11,14 +11,13 @@ enum ParsingState {
     ParsingExit,
     ParsingWhile,
     ParsingIf,
-    ParsingElse,
 }
 
 pub struct Parser {
     tokens: Vec<Token>,
     index: usize,
-    vars: HashMap<String,DataType>,
-    functions: HashMap<String,NodeFunctionDefination>,
+    pub vars: HashMap<String,DataType>,
+    pub  functions: HashMap<String,NodeFunctionDefination>,
     state:ParsingState,
 }
 
@@ -26,9 +25,15 @@ pub struct Parser {
 #[derive(Debug,Clone)]
 pub enum NodeTerm {
     NodeTermIntLit{value:Token},
+    NodeTermChar { value: Token},
     NodeTermIdent{value:Token},
     NodeTermParen{value:Box<NodeExpr>},
     NodeTermBool{value:Token},
+    NodeTermArray { value: ArrayTerm },
+    NodePointer {value:Box<NodeTerm>},
+    NodeSlice{value:ArrayTerm},
+    NodeTermBuiltinFunc{value:NodeBuiltin},
+    NodeTermDeref { value: Box<NodeTerm> },
 }
 
 impl NodeTerm {
@@ -37,7 +42,7 @@ impl NodeTerm {
             NodeTerm::NodeTermIdent { value } => {
                 let ident =value.value.clone().unwrap();
                 if let Some(dt) = vars.get(&ident) {
-                   return *dt 
+                    return dt.clone() 
                 }else {
                     ParsingError::UndeclaredIdentifier{ident:value.clone()}.error_and_exit();
                 }
@@ -46,6 +51,65 @@ impl NodeTerm {
             NodeTerm::NodeTermBool { value:_ }  => DataType::Bool,
             NodeTerm::NodeTermIntLit { value:_ } => DataType::Int32,
             NodeTerm::NodeTermParen { value } => value.get_datatype(functions,vars),
+            NodeTerm::NodeTermArray{value} => {
+                match value {
+                    ArrayTerm::ArrayIndexer { value, .. } => { 
+                        if let Some(v) = vars.get(&value.value.clone().unwrap()) {
+                          match v {
+                              DataType::Array(dt,_) => dbg!(*dt.clone()),
+                              _ => unreachable!()
+                          } 
+                        }else {
+                           unimplemented!() 
+                        }
+                    },
+                    _ => value.get_datatype(vars,functions)
+                }
+            } 
+            NodeTerm::NodeTermChar {..} => DataType::Char,
+            NodeTerm::NodePointer { value } => DataType::Pointer{ty:Box::new(value.get_datatype(vars,functions))},
+            NodeTerm::NodeSlice { value } => DataType::Slice {
+                ty: Box::new(value.get_datatype(vars,functions))    
+            },
+            NodeTerm::NodeTermBuiltinFunc { value } => value.value.get_return_type().unwrap(),
+           NodeTerm::NodeTermDeref { value } => {
+                let dt = value.get_datatype(vars,functions);
+
+                match dt {
+                    DataType::Pointer { ty } => {
+                       *ty 
+                    }
+                    _ => {
+
+                        ParsingError::Custom(format!("Cannot derefernce type {}. \nThe object must be a pointer to derefernce.",dt)).error_and_exit();
+                        DataType::Void
+                    }
+                }
+
+            }
+        }
+    }
+
+    pub fn ident(&self) -> Option<Token> {
+        match self {
+            NodeTerm::NodeTermIdent { value } => Some(value.clone()),
+            NodeTerm::NodeTermDeref { value } => value.ident(),
+            _ => None
+        }
+    }
+    // TODO: Make a result type for this.
+    pub fn try_set_dt(&mut self, dt:DataType) -> Option<()> {
+        match self {
+            NodeTerm::NodeTermIdent { value } => value.datatype = Some(dt),
+            _ => return None
+        }
+        Some(())
+    }
+
+    pub fn is_deref(&self) -> bool {
+        match self {
+            NodeTerm::NodeTermDeref { .. } => true,
+            _ => false,
         }
     }
 }
@@ -87,12 +151,75 @@ pub enum BoolExpr {
     },
 }
 
+
+#[derive(Debug,Clone,Default)]
+pub enum ArrayIndexerType {
+    Lhs,
+    #[default]
+    Rhs
+}
+#[derive(Debug,Clone)]
+pub enum ArrayTerm {
+    DefaultValues{ty:DataType,values:Vec<Box<NodeExpr>>}, // [1,2,3,4];
+    ArrayBuilder{init_value:Box<NodeExpr>,len:Box<NodeExpr>}, // [0;1000];
+    ArrayIndexer{value:Token, index:Box<NodeExpr>,ty:ArrayIndexerType}, // arr[index];
+    ArraySlice{ty:DataType} // &arr which is of type &[dt],
+}
+
+impl ArrayTerm {
+    pub fn get_datatype(&self,vars:&HashMap<String,DataType>,functions:&HashMap<String,NodeFunctionDefination>) -> DataType {
+        use ArrayTerm::*;
+        match self {
+            DefaultValues { ty, .. } =>ty.clone() ,
+            ArrayBuilder { init_value, .. } => {
+                DataType::Array(Box::new(init_value.get_datatype(functions,vars)),0)
+            }
+            ArrayIndexer { value, ..} => {
+                vars.get(&value.value.clone().unwrap()).unwrap_or(&DataType::Infer).clone()
+            }
+            ArraySlice { ty } => ty.clone()
+        }
+    }
+
+    pub fn ident(&self) -> Option<Token> {
+        use ArrayTerm::*;
+        match self {
+            DefaultValues {.. } | ArrayBuilder {..} => None,
+            ArrayIndexer { value, .. } => {
+                Some(value.clone())     
+            }
+            ArraySlice{ty} => None
+        }
+    }
+
+    pub fn len(&self) -> Option<usize> {
+        match self {
+            Self::DefaultValues { ty:_, values } => Some(values.len()),
+            Self::ArrayBuilder { init_value:_, len} => {
+                match *len.clone() {
+                    NodeExpr::NodeExprTerm { value } =>{
+                        match value {
+                            NodeTerm::NodeTermIntLit { value } => {
+                                return value.value.unwrap().parse::<usize>().ok();
+                            }
+                            _ => unimplemented!()
+                        }
+                    }
+                    _ => unimplemented!()
+                }
+            }
+            _ => None
+        }
+    }
+}
+
 #[derive(Debug,Clone)]
 pub enum NodeExpr {   
     NodeExprTerm{value:NodeTerm},
     NodeExprBinExpr{value:BinExpr},
     NodeExprBoolExpr{value:BoolExpr},
     NodeExprFunctionCall{value:NodeFunctionCall},
+    NodeExprBuiltin{value:NodeBuiltin},
 }
 
 impl NodeExpr {
@@ -104,13 +231,14 @@ impl NodeExpr {
             NodeExpr::NodeExprFunctionCall { value } => {
                 let ident = value.ident.value.clone().unwrap();
                 if let Some(nodefuncdef) = functions.get(&ident) {
-                    return nodefuncdef.return_type.unwrap_or(DataType::Void);
+                    return nodefuncdef.clone().return_type.unwrap_or(DataType::Void);
                 }else {
                     let loc = value.ident.token_location;
                     ParsingError::Custom(format!("Undefined function {:?} at {}:{}",ident,loc.0,loc.1)).error_and_exit();
                     DataType::Void
                 }
             }
+            NodeExpr::NodeExprBuiltin { value } => value.value.get_return_type().unwrap_or(DataType::Void),
         }
     }
 }
@@ -187,11 +315,12 @@ pub struct NodeReturn {
 
 #[derive(Debug,Clone)]
 pub enum NodeReassign {
-    Assign{ident:Token,expr:NodeExpr},
-    Add{ident:Token,expr:NodeExpr},
-    Sub{ident:Token,expr:NodeExpr},
-    Mul{ident:Token,expr:NodeExpr},
-    Div{ident:Token,expr:NodeExpr},
+    Assign{ident:NodeTerm,expr:NodeExpr},
+    Add{ident:NodeTerm,expr:NodeExpr},
+    Sub{ident:NodeTerm,expr:NodeExpr},
+    Mul{ident:NodeTerm,expr:NodeExpr},
+    Div{ident:NodeTerm,expr:NodeExpr},
+    ArrayReassign{value:Box<NodeReassign>,array:NodeExpr},
 }
 
 #[derive(Debug,Clone)]
@@ -199,6 +328,39 @@ pub struct NodeScope {
     pub stmts:Vec<NodeStatement>
 }
 
+#[derive(Debug,Clone)]
+pub enum BuiltinType {
+    /// Gets the size it occupies on the stack. size is calulated in how many stack locations it occupies. 
+    /// int32, bool, char,ptr and slice takes 1 stack location, array of n elements takes n + 1 stack
+    /// locations (because the -1 index stores length of array) (may change in the future)
+    /// structs take the sum of all the size of the fields.
+    SizeOf, 
+    /// Takes in a string, prints to the screen
+    Print,
+}
+
+impl BuiltinType {
+    pub fn get_return_type(&self) -> Option<DataType> {
+        match self {
+            BuiltinType::SizeOf => Some(DataType::Int32),
+            BuiltinType::Print => Some(DataType::Void),
+        }
+    }
+
+    pub fn from_str(s:&str) -> Option<BuiltinType> {
+        match s {
+            "sizeof" => Some(BuiltinType::SizeOf),
+            "print" => Some(BuiltinType::Print),
+            _ => unimplemented!()
+        }
+    }
+}
+
+#[derive(Debug,Clone)]
+pub struct NodeBuiltin {
+    pub value:BuiltinType,
+    pub expr: Box<NodeExpr>
+}
 
 #[derive(Debug,Clone)]
 pub enum NodeStatement{
@@ -211,6 +373,7 @@ pub enum NodeStatement{
     NodeStatementFunctionDefination{value: NodeFunctionDefination},
     NodeStatementFunctionCall{value: NodeFunctionCall},
     NodeStatementReturn{value:NodeReturn},
+    NodeStatementBuiltin {value:NodeBuiltin}
 }
 
 pub struct NodeProgram {
@@ -223,88 +386,365 @@ impl Parser {
     }
 
 
-    pub fn parse_term(&mut self) -> Option<NodeTerm> {
-        if let Some(t) = self.peek_token() {
-
-            if t.token_type == TokenType::NUM {
-                let term = NodeTerm::NodeTermIntLit { value: self.consume_token().unwrap() };
-                return Some(term);
-            } else if t.token_type == TokenType::IDENT {
-                if let Some(dt) = self.vars.get_mut(&t.value.clone().unwrap()) {
-                    let new_tok = Token {
-                        datatype: Some(*dt),
-                        token_type: TokenType::IDENT,
-                        value: t.value,
-                        token_location:t.token_location
-                    }; 
-                    self.consume_token();
-                    return Some(NodeTerm::NodeTermIdent{value:new_tok.clone()});
-                } 
-                self.vars.insert(t.value.unwrap().clone(),t.datatype.unwrap());
-                let term = NodeTerm::NodeTermIdent { value: self.consume_token().unwrap() };
-                return Some(term);
-            }else if let Some(open_paren) = self.try_consume(TokenType::OPEN_PAREN){
-                if let Some(expr) =self. parse_expr(0,DataType::Infer) {
-                    if let Some(_) = self.try_consume(TokenType::CLOSE_PAREN) {
-                        let term = NodeTerm::NodeTermParen{value:Box::new(expr)};
-                        return Some(term);
-                    }else { 
+    pub fn parse_type(&mut self) -> Option<DataType> {
+        if self.try_consume(TokenType::TYPE_CHAR).is_some() {
+            Some(DataType::Char)
+        }else if self.try_consume(TokenType::TYPE_INT32).is_some() {
+            Some(DataType::Int32)
+        }else  if self.try_consume(TokenType::FALSE).is_some() || self.try_consume(TokenType::TRUE).is_some() {
+            Some(DataType::Bool)
+        } 
+        // Array 
+        else if self.try_consume(TokenType::OPEN_SQUARE).is_some() {
+            if let Some(t) = self.parse_type(){
+                if self.try_consume(TokenType::SEMICOLON).is_none() {
+                    let loc = self.peek_token().unwrap().token_location;
+                    ParsingError::ExpectedTokenNotFound{expected_token:"';'".to_string(),loc}.error_and_exit();
+                }
+                if let Some(len) = self.try_consume(TokenType::NUM) {
+                    if self.try_consume(TokenType::CLOSE_SQUARE).is_none() {
                         let loc = self.peek_token().unwrap().token_location;
-                        ParsingError::ExpectedTokenNotFound{expected_token:")".to_string(),loc}.error_and_exit(); 
+                        ParsingError::ExpectedTokenNotFound{expected_token:"Close Paren ']'".to_string(),loc}.error_and_exit();
                     }
+                    return Some(DataType::Array(Box::new(t),len.value.unwrap().parse::<usize>().unwrap()))
                 }else {
                     let loc = self.peek_token().unwrap().token_location;
-                    ParsingError::ExpectedExpr{loc}.error_and_exit();
+                    ParsingError::Custom(format!("Expected a lenght of array at {}:{}",loc.0,loc.1)).error_and_exit();
+                    None
+                }
+            }else {
+                let loc = self.peek_token().unwrap().token_location;
+                ParsingError::Custom(format!("Expected a data type at {}:{}",loc.0,loc.1)).error_and_exit();
+                None
+            }
+        }
+        else if self.try_consume(TokenType::AMPERSAND).is_some() {
+            // Check if its a slice or array pointer
+            if self.try_consume(TokenType::OPEN_SQUARE).is_some() {
+                if let Some(dt) = self.parse_type() {
 
+                    if self.try_consume(TokenType::SEMICOLON).is_some(){
+                        // it is an array 
+                        if let Some(len) = self.try_consume(TokenType::NUM) {
+                            if self.try_consume(TokenType::CLOSE_SQUARE).is_none() {
+                                let loc = self.peek_token().unwrap().token_location;
+                                ParsingError::ExpectedTokenNotFound{expected_token:"Close Paren ']'".to_string(),loc}.error_and_exit();
+                            }
+                            return Some(DataType::Pointer {
+                                ty: Box::new(DataType::Array(Box::new(dt),len.value.unwrap().parse::<usize>().unwrap()))
+                            })
+
+                        }else {
+                            let loc = self.peek_token().unwrap().token_location;
+                            ParsingError::Custom(format!("Expected a lenght of array at {}:{}",loc.0,loc.1)).error_and_exit();
+                            None
+                        }
+                    }else {
+                        // Slice!
+                        if self.try_consume(TokenType::CLOSE_SQUARE).is_none() {
+                            let loc = self.peek_token().unwrap().token_location;
+                            ParsingError::ExpectedTokenNotFound{expected_token:"Close Paren ']'".to_string(),loc}.error_and_exit();    
+                        }
+                        return Some(DataType::Slice{
+                            ty:Box::new(dt)
+                        })
+                    }
+                } else  {
+                    let loc = self.peek_token().unwrap().token_location;
+                    ParsingError::Custom(format!("Expected a data type at {}:{}",loc.0,loc.1)).error_and_exit();
+                    None
                 }
 
-            }else if let Some(boolean) = self.try_consume(TokenType::TRUE) {
-                let term = NodeTerm::NodeTermBool{value:boolean};
-                return Some(term);
-            }else if let Some(boolean) = self.try_consume(TokenType::FALSE) {
-                let term = NodeTerm::NodeTermBool{value:boolean};
-                return Some(term);
+            }else if let Some(dt) = self.parse_type() {
+                Some(DataType::Pointer {
+                    ty:Box::new(dt),
+                })
             }
+            else {
+                let loc = self.peek_token().unwrap().token_location;
+                ParsingError::Custom(format!("Expected a data type at {}:{}",loc.0,loc.1)).error_and_exit();
+                None
+            }
+        }
+        else {
+            None
+        }
+
+    }
+
+    pub fn parse_ident_term(&mut self) ->Option<NodeTerm> {
+        if let Some(value) =self.try_consume(TokenType::IDENT) {
+            return Some(NodeTerm::NodeTermIdent {
+                value
+            })
         }
         None
     }
+    pub fn parse_term(&mut self) -> Option<NodeTerm> {
+        if let Some(bt) = self.parse_builtin() {
+          
+           return Some(NodeTerm::NodeTermBuiltinFunc{value:bt}); 
+        }
+        if self.try_consume(TokenType::AMPERSAND).is_some() {
+            return Some(NodeTerm::NodePointer {
+                value: Box::new(self.parse_term().unwrap()),
+            })
+        }
+        if self.try_consume(TokenType::MULT).is_some() {
+            return Some(NodeTerm::NodeTermDeref {
+                value: Box::new(self.parse_term().unwrap()),
+            })
+        }
+        if let Some(t) = self.peek_token() {
+                if t.token_type == TokenType::OPEN_SQUARE {
+                self.consume_token();
+                let init_value = self.parse_expr(0, DataType::Infer).unwrap();
 
+                if let Some(_s) = self.try_consume(TokenType::SEMICOLON) {
+                    let len = self.parse_expr(0, DataType::Infer);
+                    if len.is_none() {
+                        let loc = self.peek_token().unwrap().token_location;
+                        ParsingError::InvalidExpr { loc }.error_and_exit();
+                        return None;
+                    } else if self.try_consume(TokenType::CLOSE_SQUARE).is_none() {
+                        let loc = self.peek_token().unwrap().token_location;
+                        ParsingError::InvalidExpr { loc }.error_and_exit();
+                        return None;
+                    }
+                    Some(NodeTerm::NodeTermArray {
+                        value: ArrayTerm::ArrayBuilder {
+                            init_value: Box::new(init_value),
+                            len: Box::new(len.unwrap()),
+                        }
+                    })
+                } else if let Some(_c) = self.try_consume(TokenType::COMMA) {
+                    let mut v: Vec<Box<NodeExpr>> = Vec::new();
+                    v.push(Box::new(init_value.clone()));
+                    let mut c = 0;
+                    loop {
+                        if let Some(t) = self.peek_token() {
+                            if t.token_type == TokenType::CLOSE_SQUARE {
+                                break;
+                            }
+                            if c % 2 == 0 {
+                                if let Some(e) = self.parse_expr(0, DataType::Infer) {
+                                    v.push(Box::new(e));
+                                } else {
+                                    ParsingError::Custom(format!("Expected value, found {:?} at {}:{}", t, t.token_location.0, t.token_location.1)).error_and_exit();
+                                }
+                            } else {
+                                if t.token_type != TokenType::COMMA {
+                                    ParsingError::Custom(format!("Expected comma (,) found {:?} at {}:{}", t, t.token_location.0, t.token_location.1)).error_and_exit();
+                                }
+                                self.consume_token();
+                            }
+                            c += 1;
+                        } else {
+                            ParsingError::Custom("Unexpected end of input".to_string()).error_and_exit();
+                        }
+                    }
+                    if self.try_consume(TokenType::CLOSE_SQUARE).is_none() {
+                        let loc = self.peek_token().unwrap().token_location;
+                        ParsingError::InvalidExpr { loc }.error_and_exit();
+                    }
+                    Some(NodeTerm::NodeTermArray {
+                        value: ArrayTerm::DefaultValues {
+                            ty: {
+                                let dt = init_value.get_datatype(&self.functions, &self.vars);
+                                match dt {
+                                    DataType::Array(_,_) => dt,
+                                    _ => DataType::Array(Box::new(dt.clone()),v.len())
+                                }
+                            },
+                            values: v,
+                        }
+                    })
+                } else {
+                    let loc = self.peek_token().unwrap().token_location;
+                    ParsingError::InvalidExpr { loc }.error_and_exit();
+                    None
+                }
+            } else if t.token_type == TokenType::NUM {
+                let term = NodeTerm::NodeTermIntLit { value: self.consume_token().unwrap() };
+                Some(term)
+            } else if t.token_type == TokenType::STR_LIT {
+                if t.value.clone().unwrap().len() == 1 {
+                    let term = NodeTerm::NodeTermChar { value: self.consume_token().unwrap() };
+                    return Some(term);
+                }
+                let ty = t.datatype.unwrap();
+                let values = t.value.clone().unwrap().chars().enumerate().map(|x| Box::new(NodeExpr::NodeExprTerm {
+                    value: NodeTerm::NodeTermChar {
+                        value: Token {
+                            token_type: TokenType::STR_LIT,
+                            datatype: Some(DataType::Char),
+                            token_location: (t.token_location.0, t.token_location.1 + x.0),
+                            value: Some(x.1.to_string())
+                        }
+                    }
+                })).collect();
+                let term = NodeTerm::NodeTermArray {
+                    value: ArrayTerm::DefaultValues {
+                        values,
+                        ty
+                    }
+                };
+                self.consume_token();
+                Some(term)
+            } else if t.token_type == TokenType::IDENT {
+                if let Some(os) = self.peek_token_offset(1) {
+                    if os.token_type == TokenType::OPEN_SQUARE {
+                        if let Some(dt) = self.vars.get_mut(&t.value.clone().unwrap()) {
+                            let new_tok = Token {
+                                datatype: Some(dt.clone()),
+                                token_type: TokenType::IDENT,
+                                value: t.value,
+                                token_location: t.token_location
+                            };
+                            self.consume_token(); // Consume ident
+                            self.consume_token(); // Consume [
 
-    pub fn check_type_expr(&mut self,ident:&mut Token,expr:NodeExpr) {
-        let datatype = match expr.clone() {
-            NodeExpr::NodeExprTerm{value:term} =>  {
-                match term {
-                    NodeTerm::NodeTermBool{..} => DataType::Bool,
-                    NodeTerm::NodeTermIntLit{..} => DataType::Int32,
-                    NodeTerm::NodeTermIdent{value:tok} => {
-                        let dt =if tok.datatype.is_some() {
-                            tok.datatype.unwrap()
-                        }else {
-                            DataType::Infer
-                        };
-                        dt
-                    } 
-                    _=> DataType::Infer,
+                            let index_expr = self.parse_expr(0, DataType::Int32);
+                            if index_expr.is_none() {
+                                ParsingError::ExpectedExpr { loc: t.token_location }.error_and_exit();
+                            }
+
+                            if self.try_consume(TokenType::CLOSE_SQUARE).is_none() {
+                                let loc = self.peek_token().unwrap().token_location;
+                                ParsingError::ExpectedTokenNotFound { expected_token: "]".to_string(), loc }.error_and_exit();
+                            }
+                            return Some(NodeTerm::NodeTermArray {
+                                value: ArrayTerm::ArrayIndexer {
+                                    value: new_tok,
+                                    index: Box::new(index_expr.unwrap()),
+                                    ty: ArrayIndexerType::default()
+                                }
+                            });
+                        }
+                    }
+                }
+                if let Some(dt) = self.vars.get_mut(&t.value.clone().unwrap()) {
+                    let new_tok = Token {
+                        datatype: Some(dt.clone()),
+                        token_type: TokenType::IDENT,
+                        value: t.value,
+                        token_location: t.token_location
+                    };
+                    self.consume_token();
+                    Some(NodeTerm::NodeTermIdent { value: new_tok.clone() })
+                }else {
+                    self.vars.insert(t.value.unwrap().clone(), t.datatype.unwrap());
+                    let term = NodeTerm::NodeTermIdent { value: self.consume_token().unwrap() };
+                    Some(term)
+                }
+            } else if let Some(_open_paren) = self.try_consume(TokenType::OPEN_PAREN) {
+                if let Some(expr) = self.parse_expr(0, DataType::Infer) {
+                    if let Some(_) = self.try_consume(TokenType::CLOSE_PAREN) {
+                        let term = NodeTerm::NodeTermParen { value: Box::new(expr) };
+                       Some(term)
+                    } else {
+                        let loc = self.peek_token().unwrap().token_location;
+                        ParsingError::ExpectedTokenNotFound { expected_token: ")".to_string(), loc }.error_and_exit();
+                        None
+                    }
+                } else {
+                    let loc = self.peek_token().unwrap().token_location;
+                    ParsingError::ExpectedExpr { loc }.error_and_exit();
+                    None
+                }
+            } else if let Some(boolean) = self.try_consume(TokenType::TRUE) {
+                let term = NodeTerm::NodeTermBool { value: boolean };
+                Some(term)
+            } else if let Some(boolean) = self.try_consume(TokenType::FALSE) {
+                let term = NodeTerm::NodeTermBool { value: boolean };
+                Some(term)
+            } else {
+                None
+            }
+        } else {
+            None
+        }
+    }
+    
+    
+    pub fn check_type_term_and_expr(&mut self,ident:&mut NodeTerm,expr:NodeExpr) {
+        let ident_clone = ident.clone();
+        let expected_dt = ident.get_datatype(&self.vars,&self.functions);
+        let expected_dt_clone = expected_dt.clone();
+        let got_dt = expr.get_datatype(&self.functions,&self.vars).clone();
+        let got_dt_clone = got_dt.clone();
+            let inc_type_err = move || {
+
+                ParsingError::IncorrectType{ident:ident_clone.ident().unwrap(),expected_type:expected_dt_clone,got_type:got_dt_clone}.error_and_exit()
+
+            };
+        if expected_dt != got_dt && expected_dt != DataType::Infer {
+            match expected_dt {
+
+                DataType::Array(ref d,_) => {
+                    if **d == got_dt {
+                        return;
+                    }
+                    inc_type_err();
+                }
+                DataType::Slice{ref ty} => {
+                    match got_dt{
+                        DataType::Pointer {ty: ref dty } => {
+                            if ty == dty {
+                                return 
+                            }else {
+
+                                inc_type_err();
+                            }
+                        }
+                        _ =>  inc_type_err()
+
+                    }
 
                 }
+                _ =>inc_type_err()
             }
-            NodeExpr::NodeExprBoolExpr{value:_nodeterm} => {
-                DataType::Bool 
-            }  
-            NodeExpr::NodeExprBinExpr{value:_tok} =>DataType::Int32,
-            NodeExpr::NodeExprFunctionCall { value:_} => DataType::Infer,
 
-        };
+        }
+        if expected_dt ==DataType::Infer && got_dt != DataType::Infer {
+            ident.try_set_dt(got_dt).unwrap();
+        }
+    }
 
+    pub fn check_type_expr(&mut self,ident:&mut Token,expr:NodeExpr) {
+        let datatype = self.get_datatype_expr(&expr).unwrap();
         if let Some(expected_dt) = self.vars.get(&ident.value.clone().unwrap()) {
-            if *expected_dt != datatype && *expected_dt != DataType::Infer {
-                ParsingError::IncorrectType{ident:ident.clone(),expected_type:*expected_dt,got_type:datatype}.error_and_exit();
+            let expected_dt = expected_dt.clone();
+            if expected_dt != datatype && expected_dt != DataType::Infer  {
+                match expected_dt {
+                    DataType::Array(ref d,_)=> {
+                        if **d == datatype{
+                            return;
+                        }
+                        dbg!(ParsingError::IncorrectType{ident:ident.clone(),expected_type:expected_dt,got_type:datatype.clone()}).error_and_exit()
+
+                    }
+                    DataType::Slice { ref ty } => {
+                        match datatype {
+                            DataType::Pointer {ty: ref dty } => {
+                                if ty == dty {
+                                    return 
+                                }else {
+                                    ParsingError::IncorrectType{ident:ident.clone(),expected_type:expected_dt,got_type:datatype.clone()}.error_and_exit();
+                                }
+                            }
+                            _ =>ParsingError::IncorrectType{ident:ident.clone(),expected_type:expected_dt,got_type:datatype.clone()}.error_and_exit()
+                        }
+                    }
+                    _ => ParsingError::IncorrectType{ident:ident.clone(),expected_type:expected_dt,got_type:datatype.clone()}.error_and_exit()
+
+                }
             }
         }else {
             ParsingError::UndeclaredIdentifier{ident:ident.clone()}.error_and_exit();
 
         }
-        if ident.datatype.is_some() && ident.datatype.unwrap() == DataType::Infer && datatype != DataType::Infer{
+        if ident.datatype.is_some() && ident.datatype.clone().unwrap() == DataType::Infer && datatype != DataType::Infer{
             ident.datatype = Some(datatype);
         }
 
@@ -314,30 +754,27 @@ impl Parser {
     pub fn get_datatype_expr(&mut self, expr:&NodeExpr) -> Option<DataType> {
         let datatype = match expr.clone() {
             NodeExpr::NodeExprTerm{value:term} =>  {
-                match term {
-                    NodeTerm::NodeTermBool{..} => DataType::Bool,
-                    NodeTerm::NodeTermIntLit{..} => DataType::Int32,
-                    NodeTerm::NodeTermIdent{value:tok} => {
-                        *if let Some(dt) = self.vars.get(&tok.value.clone().unwrap())  {
-                            dt
-                        }else {
-
-                            ParsingError::InvalidIdentifier{ident:tok.clone()}.error_and_exit();
-                            return None;
-                        }
-                    }
-                    NodeTerm::NodeTermParen { value } => {
-                        return self.get_datatype_expr(&value);
-                    }
-                    _=> DataType::Infer,
-
-                }
+                term.get_datatype(&self.vars,&self.functions) 
             }
             NodeExpr::NodeExprBoolExpr{value:_nodeterm} => {
                 DataType::Bool 
             }  
             NodeExpr::NodeExprBinExpr{value:_tok} =>DataType::Int32,
-            NodeExpr::NodeExprFunctionCall { value:_} => DataType::Infer,
+            NodeExpr::NodeExprFunctionCall { value} => { 
+                let d1 = self.vars.get(value.ident.value.as_ref().unwrap());
+                let d2 = self.functions.get(value.ident.value.as_ref().unwrap());
+                dbg!((d1,d2));
+                if d1.is_none() && d2.is_none() {
+                    DataType::Void 
+                }else if d1.is_some() && d2.is_some() {
+                    unreachable!();
+                }else if d1.is_some() {
+                    d1.unwrap().clone()
+                }else  {
+                   d2.unwrap().clone().return_type.unwrap_or(DataType::Void)
+                }
+            },
+NodeExpr::NodeExprBuiltin { value } => value.value.get_return_type().unwrap_or(DataType::Void),
         };
         return Some(datatype);
 
@@ -348,6 +785,10 @@ impl Parser {
         if let Some(lhs_term) = self.parse_term() {
             match lhs_term.clone() {
                 NodeTerm::NodeTermIdent { value } => {
+
+
+                    // Funcction
+                    // TODO: Change this to be nodeterm function term rather than a nodeexpr
                     if self.try_consume(TokenType::OPEN_PAREN).is_some() {
                         let mut args:Vec<NodeExpr> = Vec::new();
 
@@ -401,17 +842,46 @@ impl Parser {
                 _ => {}
             }
             let mut lhs_expr = NodeExpr::NodeExprTerm { value: lhs_term };
+
             let expr_dt = self.get_datatype_expr(&lhs_expr);
-            if expr_datatype != DataType::Infer && expr_dt.is_some() && expr_dt.unwrap() != expr_datatype {
+            if expr_datatype != DataType::Infer && expr_dt.is_some() && expr_dt.clone().unwrap() != expr_datatype {
+                // check for slice 
+                match expr_datatype {
+                    DataType::Slice { ty: ref slice_type } => {
+                        match expr_dt.clone().unwrap() {
+                            DataType::Pointer { ty:arr } => {
+                                match *arr {
+                                    DataType::Array(ty,_len) => {
+                                        if *slice_type != ty {
+                                            let loc = self.peek_token().unwrap().token_location;
+                                            ParsingError::IncorrectTypeExpr{expected_type:expr_datatype,got_type:expr_dt.clone().unwrap(),loc}.error_and_exit();
 
-                let loc = self.peek_token().unwrap().token_location;
-                ParsingError::IncorrectTypeExpr{expected_type:expr_datatype,got_type:expr_dt.unwrap(),loc}.error_and_exit();
-            }
+                                        }
+                                    }
+                                    _ => {
+                                        let loc = self.peek_token().unwrap().token_location;
+                                        ParsingError::IncorrectTypeExpr{expected_type:expr_datatype,got_type:expr_dt.clone().unwrap(),loc}.error_and_exit();
+                                    }
+                                }
+                            }
+                            _ => {
+                        let loc = self.peek_token().unwrap().token_location;
+                        ParsingError::IncorrectTypeExpr{expected_type:expr_datatype,got_type:expr_dt.clone().unwrap(),loc}.error_and_exit();
+                            }
+                        }
+                    }
+                    _ =>{
+                        let loc = self.peek_token().unwrap().token_location;
+                        ParsingError::IncorrectTypeExpr{expected_type:expr_datatype,got_type:expr_dt.clone().unwrap(),loc}.error_and_exit();
+
+                    }
+                }
+            } 
+
             while let Some(cur) = self.peek_token() {
-
                 if is_bool_op(cur.token_type) {
                     if let Some(bool_op) = self.consume_token() {
-                        if let Some(rhs) = self.parse_expr(0,expr_dt.unwrap()) {
+                        if let Some(rhs) = self.parse_expr(0,expr_dt.clone().unwrap()) {
                             match bool_op.token_type {
                                 TokenType::AND => {
                                     let bool_expr_and =
@@ -469,7 +939,7 @@ impl Parser {
                     } else {
                         let next_min_prec = get_bin_precedence_level(cur.token_type).unwrap() + 1;
                         if let Some(op) = self.consume_token() {
-                            if let Some(rhs) = self.parse_expr(next_min_prec,expr_dt.unwrap()) {
+                            if let Some(rhs) = self.parse_expr(next_min_prec,expr_dt.clone().unwrap()) {
                                 match op.token_type {
                                     TokenType::ADD => {
                                         let bin_expr_add =
@@ -506,6 +976,7 @@ impl Parser {
 
             Some(lhs_expr)
         } else {
+
             None
         }
     }
@@ -570,7 +1041,7 @@ impl Parser {
                 ParsingError::ExpectedTokenNotFound { expected_token: ";".to_string(), loc }.error_and_exit();
             }
 
-           self.state = prev_state; 
+            self.state = prev_state; 
             return stmt_exit;
         } 
         return None;
@@ -589,8 +1060,8 @@ impl Parser {
                     self.consume_token();
                     let mut ident = self.consume_token().unwrap();
                     if self.vars.get(&ident.value.clone().unwrap()).is_some() {
-                        println!("Cannot have two identifiers with the same name {:?}", ident.value.unwrap());
-                        std::process::exit(0);
+//                        println!("Cannot have two identifiers with the same name {:?}", ident.value.unwrap());
+                      //  std::process::exit(0);
                     }
                     self.vars.insert(ident.value.clone().unwrap(), DataType::Infer);
                     let mut stmt_let = None;
@@ -599,19 +1070,20 @@ impl Parser {
                     if let Some(expr) = self.parse_expr(0,DataType::Infer) {
                         // Set Type for identifier
                         match expr.clone() {
-                            NodeExpr::NodeExprTerm { value: term } => match term {
-                                NodeTerm::NodeTermIdent { value: token } => ident.datatype = token.datatype,
-                                NodeTerm::NodeTermBool { .. } => ident.datatype = Some(DataType::Bool),
-                                NodeTerm::NodeTermIntLit { .. } => ident.datatype = Some(DataType::Int32),
-                                _ => {}
+                            NodeExpr::NodeExprTerm { value: term } => {
+                                ident.datatype = Some(term.get_datatype(&self.vars,&self.functions));
                             },
                             NodeExpr::NodeExprBinExpr { .. } => ident.datatype = Some(DataType::Int32),
                             NodeExpr::NodeExprBoolExpr { .. } =>{ident.datatype = Some(DataType::Bool);},
-                            NodeExpr::NodeExprFunctionCall { value:_ } => {ident.datatype = Some(DataType::Infer);}
-                            _ => unimplemented!("Unimplemented Type"),
+                            NodeExpr::NodeExprFunctionCall { value } => {
+                                //ident.datatype = Some(DataType::Infer);
+                                let fn_def = self.functions.get(&value.ident.value.unwrap()).unwrap();
+                                ident.datatype = fn_def.return_type.clone();
+                            }
+                            _ => unimplemented!("Unimplemented Type, {:?}",expr),
                         }
                         if let Some(v) = self.vars.get_mut(&ident.value.clone().unwrap()) {
-                            *v = ident.datatype.unwrap();
+                            *v = ident.datatype.clone().unwrap();
                         }
                         stmt_let = Some(NodeStatement::NodeStatementLet {
                             value: NodeLet { expr, ident },
@@ -623,6 +1095,7 @@ impl Parser {
 
                     if self.try_consume(TokenType::SEMICOLON).is_none() {
                         let loc = self.peek_token().unwrap().token_location;
+                        println!("{:?}",self.peek_token());
                         ParsingError::ExpectedTokenNotFound { expected_token: ";".to_string(),loc }.error_and_exit();
                     }
 
@@ -701,7 +1174,7 @@ impl Parser {
                         }
                     } else {
 
-                let loc = self.peek_token().unwrap().token_location;
+                        let loc = self.peek_token().unwrap().token_location;
                         ParsingError::ExpectedTokenNotFound{expected_token:")".to_string(),loc}.error_and_exit(); 
 
                     }
@@ -719,86 +1192,129 @@ impl Parser {
     }
 
     pub fn parse_reassign_stmt(&mut self) -> Option<NodeStatement> {
-        if let Some(mut ident) = self.try_consume(TokenType::IDENT) {
+        let ident = self.parse_ident_term();
+        if ident.is_none() {
+            return None;
+        } 
+        let mut ident = ident.unwrap();
+
+
+        let (is_array,array_expr)  =  {
+            if self.peek_token().is_none() || self.peek_token().unwrap().token_type != TokenType::OPEN_SQUARE {
+                (false,None)
+            }else {
+                self.index -=1;
+                (true,self.parse_expr(0,DataType::Infer))
+            }
+        };
+        let node_reassign = {
             if let Some(_assign) = self.try_consume(TokenType::ASSIGN) {
                 if let Some(expr) = self.parse_expr(0,DataType::Infer) {
-                    self.check_type_expr(&mut ident, expr.clone());
+                    self.check_type_term_and_expr(&mut ident, expr.clone());
                     if self.try_consume(TokenType::SEMICOLON).is_none() {
-                let loc = self.peek_token().unwrap().token_location;
+                        let loc = self.peek_token().unwrap().token_location;
                         ParsingError::ExpectedTokenNotFound { expected_token: ";".to_string() ,loc}.error_and_exit();
                     }
-                    let node_reassign = NodeReassign::Assign { expr, ident };
-                    let reassign_stmt = NodeStatement::NodeStatementReassign { value: node_reassign };
-                    return Some(reassign_stmt)
+                    let node_reassign = NodeReassign::Assign { expr, ident};
+                    node_reassign
                 } else {
-                let loc = self.peek_token().unwrap().token_location;
+                    let loc = self.peek_token().unwrap().token_location;
                     ParsingError::InvalidExpr{loc}.error_and_exit();
+                    unreachable!();
                 }
             } else if let Some(_add_assign) = self.try_consume(TokenType::ADD_ASSIGN) {
 
                 if let Some(expr) = self.parse_expr(0,DataType::Infer) {
-                    self.check_type_expr(&mut ident, expr.clone());
+                  
+                    self.check_type_term_and_expr(&mut ident, expr.clone());
 
                     if self.try_consume(TokenType::SEMICOLON).is_none() {
-                let loc = self.peek_token().unwrap().token_location;
+                        let loc = self.peek_token().unwrap().token_location;
                         ParsingError::ExpectedTokenNotFound { expected_token: ";".to_string(),loc }.error_and_exit();
                     }
-                    let node_reassign = NodeReassign::Add { expr, ident };
-                    let reassign_stmt = NodeStatement::NodeStatementReassign { value: node_reassign };
+                    let node_reassign = NodeReassign::Add { expr, ident  };
 
-                    return Some(reassign_stmt)
+                    node_reassign
 
                 } else {
+                    
                     ParsingError::InvalidExpr{loc:self.peek_token().unwrap().token_location}.error_and_exit();
+                    unreachable!();
                 }
             } else if let Some(_sub_assign) = self.try_consume(TokenType::SUB_ASSIGN) {
                 if let Some(expr) = self.parse_expr(0,DataType::Infer) {
-                    self.check_type_expr(&mut ident, expr.clone());
+                    self.check_type_term_and_expr(&mut ident,expr.clone());
 
                     if self.try_consume(TokenType::SEMICOLON).is_none() {
                         ParsingError::ExpectedTokenNotFound { expected_token: ";".to_string(), loc:self.peek_token().unwrap().token_location}.error_and_exit();
                     }
                     let node_reassign = NodeReassign::Sub { expr, ident };
-                    let reassign_stmt = NodeStatement::NodeStatementReassign { value: node_reassign };
 
-                    return Some(reassign_stmt)
+                    node_reassign
 
                 } else {
                     ParsingError::InvalidExpr{loc:self.peek_token().unwrap().token_location}.error_and_exit();
+                    unreachable!();
+
                 }
             } else if let Some(_mult_assign) = self.try_consume(TokenType::MULT_ASSIGN) {
                 if let Some(expr) = self.parse_expr(0,DataType::Infer) {
-                    self.check_type_expr(&mut ident, expr.clone());
+                    self.check_type_term_and_expr(&mut ident,expr.clone());
 
                     if self.try_consume(TokenType::SEMICOLON).is_none() {
                         ParsingError::ExpectedTokenNotFound { expected_token: ";".to_string(), loc:self.peek_token().unwrap().token_location}.error_and_exit();
                     }
                     let node_reassign = NodeReassign::Mul { expr, ident };
-                    let reassign_stmt = NodeStatement::NodeStatementReassign { value: node_reassign };
-
-                    return Some(reassign_stmt)
+                    node_reassign
                 } else {
                     ParsingError::InvalidExpr{loc:self.peek_token().unwrap().token_location}.error_and_exit();
-                }
+                    unreachable!();
+
+                } 
             } else if let Some(_div_assign) = self.try_consume(TokenType::DIV_ASSIGN) {
                 if let Some(expr) = self.parse_expr(0,DataType::Infer) {
-                    self.check_type_expr(&mut ident, expr.clone());
+                    self.check_type_term_and_expr(&mut ident,expr.clone());
 
                     if self.try_consume(TokenType::SEMICOLON).is_none() {
                         ParsingError::ExpectedTokenNotFound { expected_token: ";".to_string(), loc:self.peek_token().unwrap().token_location}.error_and_exit();
                     }
                     let node_reassign = NodeReassign::Div { expr, ident };
-                    let reassign_stmt = NodeStatement::NodeStatementReassign { value: node_reassign };
+                    node_reassign
 
-                    return Some(reassign_stmt)
                 } else {
                     ParsingError::InvalidExpr{loc:self.peek_token().unwrap().token_location}.error_and_exit();
+                    unreachable!()
                 }
             } else {
-                ParsingError::UnexpectedTokenFound { unexpected_token: ident}.error_and_exit();
+                ParsingError::UnexpectedTokenFound { unexpected_token: ident.ident().unwrap()}.error_and_exit();
+                unreachable!();
             }
+        };
+        if is_array {
+            let mut array_expr =  array_expr.unwrap();
+            match array_expr {
+                NodeExpr::NodeExprTerm { ref mut value } => {
+                    match value {
+                        NodeTerm::NodeTermArray { ref mut value } => {
+                            match value{
+                                ArrayTerm::ArrayIndexer { value:_, index:_, ref mut ty } => {
+                                    *ty = ArrayIndexerType::Lhs;
+                                }
+                                _ => unimplemented!()
+
+                            }
+                        } 
+                        _ => unreachable!()
+                    }
+                }
+                _ => unreachable!()
+            }
+
+            return Some(NodeStatement::NodeStatementReassign{value:NodeReassign::ArrayReassign {value:Box::new(node_reassign),array:array_expr}});
+
+        }else{
+            return Some(NodeStatement::NodeStatementReassign{value:node_reassign})
         }
-        return None;
     }
 
     pub fn parse_while_loop(&mut self) -> Option<NodeStatement> {
@@ -836,101 +1352,101 @@ impl Parser {
     }
 
     pub fn parse_func_def(&mut self) -> Option<NodeStatement> {
-        if self.try_consume(TokenType::FN).is_some() {
-            if let Some(ident) = self.try_consume(TokenType::IDENT) {
-                if self.try_consume(TokenType::OPEN_PAREN).is_none() {
-                    ParsingError::ExpectedTokenNotFound{expected_token:"(".to_string(), loc:self.peek_token().unwrap().token_location}.error_and_exit();
+        if self.try_consume(TokenType::FN).is_none() {
+            return None
+        }
+        if let Some(ident) = self.try_consume(TokenType::IDENT) {
+            if self.try_consume(TokenType::OPEN_PAREN).is_none() {
+                ParsingError::ExpectedTokenNotFound{expected_token:"(".to_string(), loc:self.peek_token().unwrap().token_location}.error_and_exit();
+            }
+            if self.state == ParsingState::ParsingFuncDef {
+                ParsingError::Custom(format!("Cannot create function `{}` inside function",ident.value.clone().unwrap())).error_and_exit();
+            }
+            let prev_state = self.state;
+            self.state = ParsingState::ParsingFuncDef;
+            let mut args:IndexMap<Token,NodeExpr> = IndexMap::new();
+            loop {
+                if self.peek_token().is_none() {
+
+                    ParsingError::Custom(format!("Unexpected end of input after function declaration :{:?}",ident.value.clone().unwrap())).error_and_exit();
                 }
-                if self.state == ParsingState::ParsingFuncDef {
-                    ParsingError::Custom(format!("Cannot create function `{}` inside function",ident.value.clone().unwrap())).error_and_exit();
-                }
-                let prev_state = self.state;
-                self.state = ParsingState::ParsingFuncDef;
-                let mut args:IndexMap<Token,NodeExpr> = IndexMap::new();
-                loop {
-                    let tok = self.consume_token();
-                    match tok {
-                        None =>  {
-                            ParsingError::Custom(format!("Unexpected end of input after function declaration :{:?}",ident.value.clone().unwrap())).error_and_exit();
-                        },
-                        Some( tok) => {
-                            if tok.token_type == TokenType::TYPE_INT32 || tok.token_type == TokenType::TYPE_BOOL {
-                                if let Some(argident) = self.try_consume(TokenType::IDENT) {
-                                    self.index -= 1;
-                                    let dt = {
-                                        if tok.token_type == TokenType::TYPE_INT32 {DataType::Int32} 
-                                        else if tok.token_type == TokenType::TYPE_BOOL { DataType::Bool} 
-                                        else {DataType::Infer}
-                                    };
-                                    self.tokens[self.index].datatype = Some(dt);
-                                    let argexpr = self.parse_expr(0,dt);
-                                    if argexpr.is_none() { ParsingError::InvalidExpr{loc:self.peek_token().unwrap().token_location}.error_and_exit(); }
-                                    args.insert(argident,argexpr.unwrap());
-                                    if self.try_consume(TokenType::COMMA).is_none() 
-                                        && self.peek_token().is_none() && self.peek_token().unwrap().token_type != TokenType::CLOSE_PAREN{
-                                            ParsingError::ExpectedTokenNotFound{expected_token:", aann".to_string(), loc:self.peek_token().unwrap().token_location}.error_and_exit();
-                                        }
-                                }else {
-                                    ParsingError::ExpectedTokenNotFound{expected_token:"identifier".to_string(), loc:self.peek_token().unwrap().token_location}.error_and_exit();
+                if self.try_consume(TokenType::CLOSE_PAREN).is_some() {
+                    let return_type:Option<DataType> = {
+
+                        let mut res = None;
+                        if self.try_consume(TokenType::COLON).is_some() {
+                            match self.peek_token() {
+                                None => {
+                                    ParsingError::Custom(format!("Unexpected end of input after function declaration :{:?}",ident.value.clone().unwrap())).error_and_exit();
                                 }
-                            } else if tok.token_type == TokenType::CLOSE_PAREN {
-                                let return_type:Option<DataType> = {
-
-                                    let mut res = None;
-                                    if self.try_consume(TokenType::COLON).is_some() {
-                                        match self.consume_token() {
-                                            None => {
-                                                ParsingError::Custom(format!("Unexpected end of input after function declaration :{:?}",ident.value.clone().unwrap())).error_and_exit();
-                                            }
-                                            Some(t) => {
-                                                if t.token_type == TokenType::TYPE_BOOL{
-                                                    res = Some(DataType::Bool);
-                                                }else if 
-                                                    t.token_type  == TokenType::TYPE_INT32 {
-                                                        res = Some(DataType::Int32);
-                                                    }else {
-
-                                                        // ParsingError::FoundInsteadOf{expected_token:"TYPE".to_string(),unexpected_token:t}.error_and_exit();
-                                                        ParsingError::ExpectedTokenNotFound{expected_token:"TYPE".to_string(), loc:self.peek_token().unwrap().token_location}.error_and_exit();
-                                                    }
-
-                                            }
-                                        };
-                                    } 
-                                    res
-                                };
-                                if let Some(scope) = self.parse_scope() {
-                                    let nodefuncdef = NodeFunctionDefination {
-                                        ident:ident.clone(),
-                                        args: args.clone(),
-                                        return_type,
-                                        scope,
-                                    };
-                                    self.functions.insert(ident.value.clone().unwrap(),nodefuncdef.clone());
-                                    self.state = prev_state;
-                                    return Some(NodeStatement::NodeStatementFunctionDefination {value:nodefuncdef});
+                                Some(_t) => {
+                                    if let Some(return_dt) = self.parse_type() {
+                                        res = Some(return_dt);
+                                    }else {
+                                        let loc = self.peek_token().unwrap().token_location;
+                                        ParsingError::Custom(format!("Expected return type at {}:{}\n\tHint: if you don't want a return type, remove the ':'",loc.0,loc.1)).error_and_exit();
+                                    }
                                 }
-                            }
-                            else {
-                                ParsingError::InvalidExpr{loc:self.peek_token().unwrap().token_location}.error_and_exit();
-                            }
-                        }
+                            };
+                        } 
+                        res
+                    };
+
+                    
+                    let mut nodefuncdef = NodeFunctionDefination {
+                        ident:ident.clone(),
+                        args: args.clone(),
+                        return_type,
+                        scope:NodeScope {stmts:Vec::new()},
+                    };
+                    self.functions.insert(ident.value.clone().unwrap(),nodefuncdef.clone());
+
+                    if let Some(scope) = self.parse_scope(){ 
+                        nodefuncdef.scope = scope.clone();
+                        self.functions.get_mut(&ident.value.clone().unwrap()).unwrap().scope = scope;
+                        self.state = prev_state;
+                        return Some(NodeStatement::NodeStatementFunctionDefination {value:nodefuncdef});
+                    }else {
+                        todo!();
                     }
                 }
+                match self.parse_type() {
+                    None => {
+                        let loc = self.peek_token().unwrap().token_location;
+                        ParsingError::Custom(format!("Expected type at {}:{} ",loc.0,loc.1)).error_and_exit();
+                    }
+                    Some(dt) => {
+                        if let Some(argident) = self.try_consume(TokenType::IDENT) {
+                            self.index -= 1;
+                            self.tokens[self.index].datatype = Some(dt.clone());
+                            let argexpr = self.parse_expr(0,dt.clone());
+                            if argexpr.is_none() { ParsingError::InvalidExpr{loc:self.peek_token().unwrap().token_location}.error_and_exit(); }
+                            args.insert(argident,argexpr.unwrap());
+                            if self.try_consume(TokenType::COMMA).is_none() 
+                                && self.peek_token().is_none() && self.peek_token().unwrap().token_type != TokenType::CLOSE_PAREN{
+                                    ParsingError::ExpectedTokenNotFound{expected_token:",".to_string(), loc:self.peek_token().unwrap().token_location}.error_and_exit();
+                                }
+                        }else {
+                            ParsingError::ExpectedTokenNotFound{expected_token:"identifier".to_string(), loc:self.peek_token().unwrap().token_location}.error_and_exit();
+                        }
+                    }
 
-            }else {
-                ParsingError::ExpectedTokenNotFound{expected_token:"Identifier".to_string(), loc:self.peek_token().unwrap().token_location}.error_and_exit();
+                }
             }
+
+        }else {
+            ParsingError::ExpectedTokenNotFound{expected_token:"Identifier".to_string(), loc:self.peek_token().unwrap().token_location}.error_and_exit();
+            None
         }
-        None 
     }
 
     pub fn parse_func_call_stmt(&mut self) -> Option<NodeStatement> {
         if let Some(ident) = self.try_consume(TokenType::IDENT) {
             let funcident = ident.value.clone().unwrap();
             if let Some(_) = self.try_consume(TokenType::OPEN_PAREN) {
-                
+
                 if let Some(nodefuncdef) = self.functions.get(&funcident) {
+
                     let prev_state = self.state;
                     self.state = ParsingState::ParsingFuncCall;
                     let nodefuncdef = nodefuncdef.clone();
@@ -940,16 +1456,24 @@ impl Parser {
                     for i in 0..nodefuncdef.args.len() {
                         match self.peek_token() {
                             None => ParsingError::Custom(format!("Unexpected end of input after calling function {:?}. \n\t{} arguments were expected, {i} were given.",ident.value.clone().unwrap(),nodefuncdef.args.len())).error_and_exit(),
-                            Some(t) => {
+                            Some(_t) => {
                                 let funcs = &self.functions;
                                 let vars = &self.vars;
+
                                 let argexpr = self.parse_expr(0,nodefuncdef.args[i].get_datatype(funcs,vars));
                                 if argexpr.is_none() {
                                     ParsingError::InvalidExpr{loc:self.peek_token().unwrap().token_location}.error_and_exit();
                                 }
                                 args.push(argexpr.unwrap());
                                 if nodefuncdef.args.len() !=0 && i != nodefuncdef.args.len()-1&& self.try_consume(TokenType::COMMA).is_none() {
-                                    ParsingError::Custom(format!("Expected comma `,` after argument number {i} in function call {}",funcident)).error_and_exit();
+                                    let tok = self.peek_token_force();
+                                    match tok.token_type {
+                                        TokenType::CLOSE_PAREN => {
+                                    ParsingError::Custom(format!("Expected argument number {} in function call {} at {}:{}",i+2,funcident,tok.token_location.0,tok.token_location.1)).error_and_exit();
+                                        }        
+                                        _ =>   ParsingError::Custom(format!("Expected comma `,` after argument number {} in function call {}",i+2,funcident)).error_and_exit()
+                                    }
+                                    
                                 }  
                             }
                         }
@@ -970,7 +1494,7 @@ impl Parser {
                     ParsingError::Custom(format!("Undeclared function {:?} at line {}:{}",ident.value.clone().unwrap(),loc.0,loc.1)).error_and_exit();
 
                 }
-                 
+
             }else {
                 self.index -=1;
                 return None;
@@ -988,14 +1512,50 @@ impl Parser {
                 return Some(NodeStatement::NodeStatementReturn{value:NodeReturn {
                     expr: Some(expr)
                 }})
-            } 
+            }      
             ParsingError::InvalidExpr{loc:self.peek_token().unwrap().token_location}.error_and_exit();
         }
         None
     }
 
+    pub fn parse_builtin(&mut self) -> Option<NodeBuiltin>{
+        if let Some(builtin) = self.try_consume(TokenType::BUILTIN) {
+            if let Some(builtin) = BuiltinType::from_str(builtin.value.clone().unwrap().as_str()) {
+                if self.try_consume(TokenType::OPEN_PAREN).is_none() {
+                    ParsingError::ExpectedTokenNotFound{expected_token:"(".to_string(), loc:self.peek_token().unwrap().token_location}.error_and_exit();
+                }
+                let expr = self.parse_expr(0,DataType::Infer);
+                if expr.is_none() {
+                    ParsingError::ExpectedExpr{loc:self.peek_token().unwrap().token_location}.error_and_exit();
+                }
+                if self.try_consume(TokenType::CLOSE_PAREN).is_none() {
+                    ParsingError::ExpectedTokenNotFound{expected_token:")".to_string(), loc:self.peek_token().unwrap().token_location}.error_and_exit();
+                }
+                let builtin = NodeBuiltin{
+                    expr:Box::new(expr.unwrap()),
+                    value:builtin
+
+                };
+                return Some(builtin)
+            }else {
+                ParsingError::Custom(format!("Invalid builtin function {:?} at {}:{}",builtin.value.unwrap(),builtin.token_location.0,builtin.token_location.1)).error_and_exit();
+            }
+        }
+        None
+    }
+
+    pub fn parse_builtin_statement(&mut self) ->Option<NodeStatement> {
+        if let Some(bt) = self.parse_builtin() {
+            if self.try_consume(TokenType::SEMICOLON).is_none() {
+                ParsingError::ExpectedTokenNotFound{expected_token:";".to_string(), loc:self.peek_token().unwrap().token_location}.error_and_exit();
+            }
+           return Some(NodeStatement::NodeStatementBuiltin {value:bt})
+        }
+        None
+    }
+
     pub fn parse_stmt(&mut self) -> Option<NodeStatement> {
-        while let Some(curp) = self.peek_token() {
+        while let Some(_curp) = self.peek_token() {
             if let Some(stmt_exit) = self.parse_exit_stmt() {
                 return Some(stmt_exit);
             } else if let Some(let_stmt) = self.parse_let_stmt() {
@@ -1018,7 +1578,9 @@ impl Parser {
                 return Some(func_def);
             }else if let Some(re) = self.parse_return() {
                 return Some(re);
-            }
+            }else if let Some(bt) = self.parse_builtin_statement() {
+                return Some(bt);
+             }
             else {
                 break;
             }
@@ -1044,6 +1606,17 @@ impl Parser {
             return None;
         }
         return Some(self.tokens[self.index + offset].clone());
+    }
+
+    fn peek_token_force(&self) ->Token {
+        if let Some(t) = self.peek_token() {
+           return t
+        }else {
+            let t = &self.tokens[self.index-1];
+            let (loc1,loc2) = (t.token_location.0,t.token_location.1);
+            ParsingError::Custom(format!("Unexpected end of input at {}:{}",loc1,loc2)).error_and_exit();
+        }
+        unreachable!()
     }
 
     fn consume_token(&mut self) -> Option<Token> {

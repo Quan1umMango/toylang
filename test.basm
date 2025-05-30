@@ -1,0 +1,67 @@
+
+label yeah:
+	getsp rcx
+	mov rax, rcx
+	sub rax, 1
+	getfromstack rax, rax
+	push rax
+	pop rdx
+	mov rax,10
+	push rax
+	pop rbx
+	cmp rdx, rbx
+	getflag rax,eqf
+	not rax
+	
+	push rax
+	pop rax
+	cmp rax, 1
+	jne scope_end0
+	push rcx
+	mov rax, rcx
+	sub rax, 1
+	getfromstack rax, rax
+	push rax
+	mov rax,1
+	push rax
+	pop rbx
+	pop rdx
+	add rdx, rbx
+	push rdx
+	call yeah
+	getfromstack 2,rax
+	push rax
+	mov rax, rcx
+	sub rax, 1
+	getfromstack rax, rax
+	push rax
+	pop rbx
+	pop rdx
+	add rdx, rbx
+	push rdx
+	sub rcx, 2
+	sub rcx,1
+	display rcx
+	getfromstack rcx,rcx
+	display rcx
+	ret
+label scope_end0:
+	mov rax, rcx
+	sub rax, 1
+	getfromstack rax, rax
+	push rax
+	sub rcx, 0
+	sub rcx,1
+	display rcx
+	getfromstack rcx,rcx
+	display rcx
+	ret
+	ret 
+label main:
+	push rcx
+	mov rax,9
+	push rax
+	call yeah
+	pop rax
+	display rax
+	halt

@@ -1,49 +1,62 @@
-; Run with bytecode Virtual Machine: 
-; https://github.com/Quan1umMango/bytecode
-
-
 label main:
 
 	push 1
 	push 5
 label label0_entry:
-	getfromstack 1, rax
-	
-	push rax
-	pop rax
 	push 1
 	pop rbx
+	getfromsp 0,rax
+	push rax
+	pop rax
 	cmp rax, rbx
 	getflag rax, gf
 	cmp rax, 1
 	getflag rax, eqf
 	
 	push rax
-	pop rax
+	pop rbx
 	cmp rax, rax
 	jz label0_exit
-	getfromstack 1, rax
-	
+	getfromsp 0,rax
 	push rax
 	pop rdx
-	getfromsp 1, rax
+	getfromsp 1,rax
 	mul rax,rdx
-	setfromsp 1, rax
 	
+	setfromsp 1, rax
 	push 1
 	pop rdx
-	getfromsp 0, rax
+	getfromsp 0,rax
 	sub rax,rdx
-	setfromsp 0, rax
 	
+	setfromsp 1, rax
 	jmp label0_entry
 label label0_exit:
-	getfromstack 0, rax
-	
+	push 13
+	push 102
+	push 97
+	push 99
+	push 116
+	push 111
+	push 114
+	push 105
+	push 97
+	push 108
+	push 32
+	push 111
+	push 102
+	push 32
+	pop rax write 13,15
+	push 4
+	push 32
+	push 105
+	push 115
+	push 32
+	pop rax write 4,19
+	getfromsp 18,rax
 	push rax
 	pop rax
 	display rax
-	halt
 	
 	mov rax,0
 	 display rax
