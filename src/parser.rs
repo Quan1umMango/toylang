@@ -1505,15 +1505,23 @@ NodeExpr::NodeExprBuiltin { value } => value.value.get_return_type().unwrap_or(D
 
     pub fn parse_return(&mut self) -> Option<NodeStatement> {
         if let Some(_) = self.try_consume(TokenType::RETURN) {
-            if let Some(expr) = self.parse_expr(0,DataType::Infer) {
+	    let expr= self.parse_expr(0,DataType::Infer); 
+           /* if let Some(expr) = self.parse_expr(0,DataType::Infer) {
                 if self.try_consume(TokenType::SEMICOLON).is_none() {
                     ParsingError::ExpectedTokenNotFound{expected_token:";".to_string(), loc:self.peek_token().unwrap().token_location}.error_and_exit();
                 }
                 return Some(NodeStatement::NodeStatementReturn{value:NodeReturn {
                     expr: Some(expr)
                 }})
-            }      
-            ParsingError::InvalidExpr{loc:self.peek_token().unwrap().token_location}.error_and_exit();
+            }
+*/
+	    if self.try_consume(TokenType::SEMICOLON).is_none() {
+		    ParsingError::ExpectedTokenNotFound{expected_token:";".to_string(), loc:self.peek_token().unwrap().token_location}.error_and_exit();
+	    }
+	    return Some(NodeStatement::NodeStatementReturn{value:NodeReturn {
+expr: expr
+                }})
+//            ParsingError::InvalidExpr{loc:self.peek_token().unwrap().token_location}.error_and_exit();
         }
         None
     }

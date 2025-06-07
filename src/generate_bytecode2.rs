@@ -1,9 +1,9 @@
-use crate::*;
-use std::collections::HashMap;
-use indexmap::IndexMap;
+	use crate::*;
+	use std::collections::HashMap;
+	use indexmap::IndexMap;
 
-#[derive(Debug)]
-pub enum VarType {
+	#[derive(Debug)]
+	pub enum VarType {
     // If its normal, then we get the position on the stack by using getstack 
     Normal,
     // if its func arg, then we get using getfromsp.
@@ -91,8 +91,8 @@ impl GeneratorVM {
                         match ident {
                             NodeTerm::NodeTermIdent { value } => {
                                 self.generate_expr(expr);
-                                self.pop("rax");
-                                self.try_set_ident(value.clone(),"rax");
+                                self.pop("rbx");
+                                self.try_set_ident(value.clone(),"rbx");
                             }
                             _ => unreachable!()
                        } 
@@ -103,8 +103,8 @@ impl GeneratorVM {
                                 self.try_load_ident_to(&value,"rbx");
                                 self.generate_expr(expr);
                                 self.pop("rax");
-                                self.output = format!("{}\n\tadd rax,rbx",self.output);
-                                self.try_set_ident(value.clone(),"rax");
+                                self.output = format!("{}\n\tadd rbx,rax",self.output);
+                                self.try_set_ident(value.clone(),"rbx");
                             }
                             _ => unreachable!()
                        } 
@@ -115,8 +115,8 @@ impl GeneratorVM {
                                 self.try_load_ident_to(&value,"rbx");
                                 self.generate_expr(expr);
                                 self.pop("rax");
-                                self.output = format!("{}\n\tsub rax,rbx",self.output);
-                                self.try_set_ident(value.clone(),"rax");
+                                self.output = format!("{}\n\tsub rbx,rax",self.output);
+                                self.try_set_ident(value.clone(),"rbx");
                             }
                             _ => unreachable!()
                        } 
@@ -127,8 +127,8 @@ impl GeneratorVM {
                                 self.try_load_ident_to(&value,"rbx");
                                 self.generate_expr(expr);
                                 self.pop("rax");
-                                self.output = format!("{}\n\tdiv rax,rbx",self.output);
-                                self.try_set_ident(value.clone(),"rax");
+                                self.output = format!("{}\n\tdiv rbx,rax",self.output);
+                                self.try_set_ident(value.clone(),"rbx");
                             }
                             _ => unreachable!()
                        } 
@@ -139,8 +139,8 @@ impl GeneratorVM {
                                 self.try_load_ident_to(&value,"rbx");
                                 self.generate_expr(expr);
                                 self.pop("rax");
-                                self.output = format!("{}\n\tmul rax,rbx",self.output);
-                                self.try_set_ident(value.clone(),"rax");
+                                self.output = format!("{}\n\tmul rbx,rax",self.output);
+                                self.try_set_ident(value.clone(),"rbx");
                             }
                             _ => unreachable!()
                        } 
@@ -204,6 +204,7 @@ impl GeneratorVM {
                     self.generate_expr(&value.args[i]);
                 }
                 self.append_output(format!("\n\tcall {}",f.ident.value.clone().unwrap()));
+		_ = self.function_base_pointers.push(self.stack_size);
             } 
 
             NodeStatementFunctionDefination { value } => {
@@ -228,18 +229,21 @@ impl GeneratorVM {
                     };
                     self.variables.insert(tok.clone().value.unwrap(),var);
                 }  
+		self.function_base_pointers.push(0);
 
                 self.stack_size += value.args.len();
                self.output = format!("{}\nlabel {}:",self.output,value.ident.clone().value.unwrap());
                // We store where the sp currently is. We'll use this to get argument variables
                self.append_output("\n\tgetsp rcx".to_owned());
+	
                self.generate_scope_without_label(&value.scope);
                // Cleanup funtion argument variables.
                // if not done, we will error if we do something  like:
                // fn myfunc(int32 x) {}
                 // let x = 23; // error: cannot use same identifier
                 let n =self.variables.len() - prev_var_nums;
-                self.stack_size -= n;
+                //self.stack_size -= n;
+		self.stack_size = 0;
                 for _ in 0..n{
                     let _ = self.variables.pop();
                 }
@@ -248,7 +252,11 @@ impl GeneratorVM {
                 self.append_output("\n\tret \n".to_string());
                 self.append_output(op);
                 self.current_func_ident = None;
+		_ = self.function_base_pointers.pop();
             }
+		
+	    	
+	
             NodeStatementReturn { value } => {
                 if self.current_func_ident.is_none() {
                     GenerationError::Custom("Cannot return from non-function body.".to_owned()).error_and_exit();
@@ -259,17 +267,18 @@ impl GeneratorVM {
                 }
                 let f = self.parser_fundefs.get(&cfd);
                 if f.is_none() {
-                    
+               		todo!();     
                 }
                 let  f = f.unwrap();
                 let expected_return_type =  match &f.return_type {
                     &None | &Some(DataType::Void) => DataType::Void,
                     x => x.clone().unwrap()
                 };  
- // Reset the base pointer
-                dbg!(self.stack_size);
-                dbg!(&self.function_base_pointers);
-                let bp = self.function_base_pointers.pop().unwrap_or(0);
+ 		// Reset the base pointer
+                //let fn_start_sp = self.function_base_pointers.pop().unwrap_or(0);
+		let fn_start_sp = self.function_base_pointers[self.function_base_pointers.len()-1]; // this is always going to be zero  
+		let prev_sp = self.stack_size; // points to the start of where the return value is going to be
+
                 let return_size = expected_return_type.size();
                 if let Some(v) = value.expr.as_ref() {
 
@@ -282,11 +291,27 @@ impl GeneratorVM {
                     }
                     self.generate_expr(v);
                 }
-                
-               self.append_output(format!("\n\tsub rcx, {bp}\n\tsub rcx,{return_size}\n\tdisplay rcx\n\tgetfromstack rcx,rcx\n\tdisplay rcx"));
 
+		let new_sp = self.stack_size; 
+		self.append_output(format!("\n\tgetfromsp {}, rax", fn_start_sp+new_sp+1)); // we will store the getsp value which was push before the function wass called
+               	if expected_return_type != DataType::Void {
+			//let new_loc = fn_start_sp + (new_sp-cur_sp); // this location is one ahead of the getsp value which was pushed before calling the function
+			let new_loc = prev_sp+return_size+1; // this location is of the getsp value which was pushed before calling the function relative to the current sp
+	
 
+			// copies the return value at the position of the getsp value which as pushed before calling the function
+			// we will also reset the value of stack pointer to the callee's value
+			//
+			// stkcpybacksp stack_start_relative_to_sp, stack_end_relative_to_sp, move_back_relavtive_to_sp 
+			self.append_output(format!("\n\tstkcpybacksp {return_size}, 0, {new_loc}"));
+			//self.append_output(format!("\n\tsub rcx, {bp}\n\tsub rcx,{return_size}\n\tdisplay rcx\n\tgetfromstack rcx,rcx\n\tdisplay rcx"));
+		}
+		//self.append_output(format!("\n\tgetfromsp {},rcx",prev_sp-return_size-1));
+		self.append_output(format!("\n\tmov rcx,rax\n\ttruncstack {}",dbg!(new_sp)-(return_size+1)+2));
                 self.append_output("\n\tret".to_owned());
+
+		// clean up stack 
+		self.stack_size -= return_size;	
             }
             _ => todo!()
         } 
@@ -393,7 +418,7 @@ impl GeneratorVM {
                         self.pop("rdx");
                         self.generate_expr(&**rhs);
                         self.pop("rbx");
-                        self.append_output(format!("\n\tcmp rax, rbx\n\tgetflag rax,gf\n\tcmp rax, 1\n\tgetflag rax,eqf\n\t"));
+                        self.append_output(format!("\n\tcmp rdx, rbx\n\tgetflag rax,gf\n\tcmp rax, 1\n\tgetflag rax,eqf\n\t"));
                         self.push("rax");
                     }
                     _ => todo!()
@@ -425,6 +450,8 @@ impl GeneratorVM {
                     self.generate_expr(&value.args[i]);
                }
                self.append_output(format!("\n\tcall {}",f.ident.value.clone().unwrap()));
+		_ = self.function_base_pointers.pop();
+		self.stack_size -= 1; // remove the previously pushe rcx
 
             }
             _ => todo!()
@@ -466,14 +493,13 @@ impl GeneratorVM {
         }
     }
 
-    // sets the identifier vvalue to the specified ister
+    // sets the identifier vvalue to the specified register
     pub fn try_set_ident(&mut self, ident:Token, reg:&str) {
         if let Some(v) = self.variables.get(ident.value.as_ref().unwrap()) {
             match v.var_type {
-                VarType::Normal => self.output = format!("{}\n\tsetstack {},{reg}",self.output,v.stack_loc-1),
+                VarType::Normal => self.output = format!("{}\n\tmov rax, rcx\n\tadd rax, {}\n\tsetstack rax,{reg}",self.output,v.stack_loc-1),
                 VarType::FuncArg => {
                     self.append_output(format!("\n\tmov rax, rcx\n\tsub rax, {}\n\tsetstack rax,{reg}",v.stack_loc+1))
-                    //self.append_output(format!("\n\tsetfromsp {},{}",v.stack_loc));
                 }
             }
         }else {
@@ -484,13 +510,12 @@ impl GeneratorVM {
     pub fn try_load_ident_to(&mut self, ident:&Token, reg:&str) {
         if let Some(v) = self.variables.get(ident.value.as_ref().unwrap()) {
             match v.var_type {
-                VarType::Normal => self.output = format!("{}\n\tgetfromstack {},{reg}",self.output,v.stack_loc-1),
+
+                VarType::Normal => self.output = format!("{}\n\tmov rax, rcx\n\tadd rax,{}\n\tgetfromstack rax,{reg}",self.output,v.stack_loc-1),
                 VarType::FuncArg => {
                     self.append_output(format!("\n\tmov rax, rcx\n\tsub rax, {}\n\tgetfromstack rax, {reg}",v.stack_loc+1))
-                    //self.append_output(format!("\n\tgetfromsp {},{}",v.stack_loc));
                 }
             }
-            //self.output = format!("{}\n\t getfromstack {},{}",self.output,v.stack_loc-1);
         }else {
             GenerationError::UndeclaredIdentifier{ident:ident.clone()}.error_and_exit();
         }
